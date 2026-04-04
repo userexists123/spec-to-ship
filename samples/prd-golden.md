@@ -1,259 +1,245 @@
-## Project Charter:  Traffic Dashboard - Gemini 20 
+## Project Charter: Hospital Operations Dashboard - Nova 7
 
 
-## Purpose 
+## Purpose
 
-Build a Traffic App Dashboard that allows users to: 
+Build a Hospital Operations Dashboard that allows users to:
 
-Browse intersections 
+Browse hospitals and care units
 
-View and compare saved simulation run from Pinot  
+View and compare saved patient-flow runs from the analytics store
 
-Trigger live simulator streams 
+Trigger live bed-capacity and admissions event streams
 
-Compare saved and live simulator streams 
+Compare saved and live hospital operations streams
 
-Validate the full integrated pipeline: Simulator → Pinot  or SignalR → Traffic App Backend → Traffic App Frontend 
+Validate the full integrated pipeline: Admissions and Bed Systems → Analytics Store or Event Stream → Hospital Backend → Hospital Frontend
 
-This Gemini must validate both technical integration and frontend rendering performance (multiple simulations with heavy traffic)  
+This Nova must validate both technical integration and frontend rendering performance (multiple active units with high patient movement)
 
- 
 
-## Prototype Goals 
+## Prototype Goals
 
-Validate end-to-end data pipeline integration across all systems. 
+Validate end-to-end data pipeline integration across all systems.
 
-Support playback of pre-simulated runs stored in Pinot. 
+Support playback of pre-recorded patient-flow runs stored in the analytics store.
 
-Support triggering and streaming of live simulation runs. 
+Support triggering and streaming of live bed-capacity and admissions runs.
 
-Schema modeling and make it as a source of truth. 
+Schema modeling and make it as a source of truth.
 
-Ability to configure the simulation.  
+Ability to configure the hospital operations run.
 
-Stress-test React + PixiJS canvas rendering performance for: 
+Stress-test React + Canvas rendering performance for:
 
-Vehicle animation 
+Patient movement animation
 
-Phase changes 
+Bed status changes
 
-High-density traffic loads 
+High-density admission loads
 
-Multiple simulations running together  
+Multiple care units running together
 
-Define clean separation of data ownership: 
+Define clean separation of data ownership:
 
-Intersection data – Traffic Apps Backend 
+Hospital master data – Hospital Backend
 
-Simulation datasets (Pinot DB) 
+Patient-flow datasets – Analytics Store
 
-Live Simulation Data ( Signal R) 
+Live hospital event data – Event Stream
 
-R & D / Learning  for  Historical playback and Live simulation 
+R & D / Learning for historical playback and live hospital operations orchestration
 
- 
 
-## Scope 
+## Scope
 
-Backend (Traffic App Backend) 
+Backend (Hospital Backend)
 
-Schema modeling for intersection schema data  
+Schema modeling for hospital layout and care-unit data
 
-Save in Cosmos DB as document.  
+Save in Cosmos DB as document.
 
-Explore graphical representation of intersection data in Cosmos DB.  
+Explore graphical representation of care-unit and bed data in Cosmos DB.
 
-Explore Postgres as source of truth. 
+Explore Postgres as source of truth.
 
-Explore working of hooks.  
+Explore working of hooks.
 
-Store and manage intersection schema data: 
+Store and manage hospital schema data:
 
-Geometry and Dimensions 
+Layout and Capacity
 
-Metadata (name, ID, image …) 
+Metadata (name, ID, image …)
 
-Provide endpoints for: 
+Provide endpoints for:
 
-Listing intersections 
+Listing hospitals
 
-Fetching intersection detail 
+Fetching hospital detail
 
-Fetching available simulation runs per intersection 
+Fetching available patient-flow runs per hospital
 
-Streaming saved simulation data from Pinot DB 
+Streaming saved patient-flow data from analytics store
 
-Streaming live simulation data delivered via IoT Hub 
+Streaming live hospital event data delivered via event stream
 
-Send both saved and live data to the frontend in the same way. 
+Send both saved and live data to the frontend in the same way.
 
-Configure the schema for simulation and generate the simulation.  
+Configure the schema for hospital operations runs and generate the run.
 
-Ability to input timing plan and demand vehicles 
+Ability to input staffing plan and admission demand
 
-Save the new simulation schema into SQL DB.  
+Save the new hospital operations schema into SQL DB.
 
- 
 
-## Frontend (Traffic App – React + PixiJS) 
+## Frontend (Hospital App – React + Canvas)
 
-1) Intersections Page 
+1) Hospitals Page
 
-Grid/List view 
+Grid/List view
 
-Intersection name, ID, image 
+Hospital name, ID, image
 
-Basic metadata (area) 
+Basic metadata (region)
 
- 
+2) Hospital Detail Page
 
-2) Intersection Detail Page 
+Hospital unit canvas view
 
+Playback controls:
 
-Intersection canvas view 
+Pause
 
+Fast-forward
 
-Playback controls: 
+Rewind (limited to saved runs)
 
-Pause 
+Speed controls
 
-Fast-forward 
+Toggle Live mode: Start new hospital operations run
 
-Rewind (limited to saved simulations) 
+Configure staffing levels, admission demand, and start run.
 
+View and select available patient-flow run
 
-Speed controls 
+3) Comparison Screen
 
-Toggle Live mode: Start new simulation 
+Select two patient-flow runs (Live and Saved, or 2 saved ones)
 
-Configure the vehicle demand, timing plan and start simulation.  
+Two / Four canvas panels side-by-side
 
-View and select available simulation run 
+4) Performance Validation
 
+Stress test:
 
-3) Comparison Screen  
+High patient density
 
-Select two simulation runs (Live and Saved, or 2 saved ones) 
+Rapid bed status changes
 
-Two / Four canvas panels side-by-side 
+Identify React + Canvas bottlenecks
 
+Evaluate rendering optimization strategies
 
-4) Performance Validation 
 
-Stress test: 
+## Out of Scope (V1)
 
-High vehicle density 
+Advanced clinical analytics dashboards
 
-Rapid phase changes 
+User authentication/authorization expansion beyond basic login
 
-Identify React + PixiJS bottlenecks 
 
-Evaluate rendering optimization strategies 
+## Roles
 
- 
+Project Manager: Leena
 
-## Out of Scope (V1) 
+Product Owner: Marcus
 
-Advanced analytics dashboards 
+Backend Lead: Harish
 
-User authentication/authorization expansion beyond basic login 
+Frontend Lead: Diya and Rohan
 
 
+## Behavioural Norms
 
-## Roles 
+Daily Stand up
 
-Project Manager: Jesbin 
+Walk up to clarify - don’t be shy
 
-Product Owner: Jimmey 
+Sprint review and planning every 2 weeks
 
-Backend Lead: Freddy 
 
-Frontend Lead: Yoosef and Subash 
+## Milestones
 
- 
+1) Project Kickoff
 
-## Behavioural Norms 
+08/04/2026
 
-Daily Stand up  
+Marcus
 
-Walk up to clarify - don’t be shy 
+2) UI layout design + Initial Schema modeling
 
-Sprint review and planning every 2 weeks 
+22/04/2026
 
- 
+3) Team
 
-## Milestones  
+Playback recorded patient-flow data
 
-1) Project Kickoff  
+06/05/2026
 
-04/03/2026  
+4) Team
 
-Jimmey 
+Playback live hospital events
 
-2) UI layout design + Initial Schema modeling 
+20/05/2026
 
-24/03/2026  
+5) Team
 
-3) Team  
+Comparison of patient-flow runs
 
-Playback simulated historic data 
+30/05/2026
 
-14/04/2026  
+6) Team
 
-4) Team  
+Stress test & Performance fix
 
-Playback simulated live data  
+06/06/2026
 
-05/05/2026  
+7) Team
 
-5) Team  
+Final schema modeling
 
-Comparison of simulated data  
+12/06/2026
 
-15/05/2026  
+8) Team
 
-6) Team  
+## Project Closure
 
-Stress test & Performance fix 
+15/06/2026
 
-22/05/2026 
+Leena
 
-7) Team 
 
-Final schema modeling 
+## Dependencies
 
-27/05/2026 
+Event Streaming Team (Separate Team)
 
-8) Team 
+Store multiple recorded patient-flow runs per hospital.
 
-## Project Closure 
+Serve patient-flow datasets for playback.
 
-29/05/2026  
+Deliver live hospital event stream into Hospital Backend.
 
-Jesbin 
+Explore future surfacing of ward device health metrics.
 
+Operations Simulation Team (Separate Team)
 
-## Dependencies   
+Generate hospital operations run outputs.
 
-IoT Hub (Separate Team) 
+Run multiple hospital scenarios and push
 
-Store multiple pre-simulated runs per intersection. 
+Provide endpoint to trigger new live hospital operations run
 
-Serve simulation datasets for playback. 
 
-Deliver live simulator output stream into Traffic App backend. 
+## Risks and Assumptions
 
-Explore future surfacing of IoT metrics. 
-
-Simulation Team (Separate Team) 
-
-Generate simulation outputs. 
-
-Run multiple simulation and push   
-
-Provide endpoint to trigger new live simulation run 
-
- 
-## Risks and Assumptions 
-
-If the dependency items were not delivered on time, it would be a risk for the planned delivery.  
+If the dependency items were not delivered on time, it would be a risk for the planned delivery.

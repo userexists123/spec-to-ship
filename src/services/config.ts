@@ -5,6 +5,7 @@ export function getAppConfig() {
     azdoOrgUrl: process.env.AZDO_ORG_URL || "",
     azdoProject: process.env.AZDO_PROJECT || "",
     executeApprovalToken: process.env.EXECUTE_APPROVAL_TOKEN || "",
-    auditLogPath: process.env.AUDIT_LOG_PATH || "./data/audit.jsonl"
+    auditLogPath: process.env.AUDIT_LOG_PATH || "./data/audit.jsonl",
+    defaultPrdPath: process.env.DEFAULT_PRD_PATH || "./samples/prd-golden.md"
   };
 }
