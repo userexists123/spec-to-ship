@@ -19,3 +19,7 @@
 
 ## Notes
 - Demo PR contains one small markdown file for later PR ingestion and review testing.
+
+## Session 2
+- Local audit log path: ./data/audit.jsonl
+- Approval token is configured only in local.settings.json or Function App settings
