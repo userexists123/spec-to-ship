@@ -19,6 +19,25 @@ async function readRequestBody(request: HttpRequest): Promise<Record<string, unk
   return {};
 }
 
+function inferPrdId(prdText: string): string {
+  const titleMatch =
+    prdText.match(/^\s*PRD\s*Title\s*:\s*(.+)$/im) ||
+    prdText.match(/^\s*Title\s*:\s*(.+)$/im) ||
+    prdText.match(/^\s*#\s+(.+)$/m);
+
+  const rawTitle = titleMatch?.[1]?.trim();
+
+  if (!rawTitle) {
+    return "prd-inline";
+  }
+
+  return rawTitle
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60) || "prd-inline";
+}
+
 export const prdParse = withModeGuard({
   actionName: "parse_prd",
   operationType: "read",
@@ -38,14 +57,27 @@ export const prdParse = withModeGuard({
     const config = getAppConfig();
     const body = await readRequestBody(request);
 
-    const prdId = typeof body.prdId === "string" && body.prdId.trim() ? body.prdId.trim() : "prd-golden";
-    const prdText =
-      typeof body.prdText === "string" && body.prdText.trim()
-        ? body.prdText
-        : await readFile(config.defaultPrdPath, "utf8");
+    const inlinePrdText =
+      typeof body.prdText === "string" && body.prdText.trim() ? body.prdText.trim() : null;
+
+    const prdText = inlinePrdText ?? (await readFile(config.defaultPrdPath, "utf8"));
+
+    const prdId =
+      typeof body.prdId === "string" && body.prdId.trim()
+        ? body.prdId.trim()
+        : inlinePrdText
+          ? inferPrdId(inlinePrdText)
+          : "prd-golden";
 
     const backlog = parsePrdToBacklog(prdText, prdId);
     const validation = validateBacklogBundle(backlog);
+
+    const inlineParseFailed =
+      Boolean(inlinePrdText) &&
+      (!validation.ok ||
+        backlog.requirements.length === 0 ||
+        backlog.epics.length === 0 ||
+        backlog.stories.length === 0);
 
     return {
       response: {
@@ -54,12 +86,20 @@ export const prdParse = withModeGuard({
           ok: validation.ok,
           prd_id: backlog.prd_id,
           backlog,
-          validation
+          validation,
+          source: inlinePrdText ? "inline_prd" : "default_prd",
+          ...(inlineParseFailed
+            ? {
+                parse_error:
+                  "Inline PRD text was provided, but no usable backlog items were extracted. The parser likely needs broader support for this PRD structure."
+              }
+            : {})
         }
       },
       previewOrResultRef: `backlog:${backlog.prd_id}`,
       metadata: {
         prd_id: backlog.prd_id,
+        source: inlinePrdText ? "inline_prd" : "default_prd",
         requirement_count: backlog.requirements.length,
         epic_count: backlog.epics.length,
         story_count: backlog.stories.length,

@@ -11,6 +11,7 @@
 - Project name: Spec to Ship Sandbox
 - Repo name: Spec to Ship Sandbox
 - Demo PR URL: https://dev.azure.com/agentic-booth/Spec%20to%20Ship%20Sandbox/_git/Spec%20to%20Ship%20Sandbox/pullrequest/1
+Railway URL: https://spec-to-ship-production.up.railway.app/
 
 ## Azure
 - Subscription: Azure subscription 1
@@ -23,3 +24,6 @@
 ## Session 2
 - Local audit log path: ./data/audit.jsonl
 - Approval token is configured only in local.settings.json or Function App settings
+
+## Session 5
+- Railway hosting instead of Azure Function Deployment

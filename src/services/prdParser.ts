@@ -14,6 +14,44 @@ function normalizeLine(value: string): string {
   return value.replace(/\s+/g, " ").trim();
 }
 
+function canonicalSectionName(value: string): string {
+  const normalized = normalizeLine(value).toLowerCase();
+
+  if (normalized === "prd title" || normalized === "title" || normalized === "project title") {
+    return "Project Title";
+  }
+
+  if (normalized === "project charter") {
+    return "Project Charter";
+  }
+
+  if (normalized === "purpose") {
+    return "Purpose";
+  }
+
+  if (normalized === "scope") {
+    return "Scope";
+  }
+
+  if (normalized === "prototype goals") {
+    return "Prototype Goals";
+  }
+
+  if (normalized === "risks and assumptions" || normalized === "risks" || normalized === "assumptions") {
+    return "Risks and Assumptions";
+  }
+
+  if (normalized === "dependencies") {
+    return "Dependencies";
+  }
+
+  if (normalized.startsWith("frontend")) {
+    return "Frontend";
+  }
+
+  return normalizeLine(value);
+}
+
 function parseSections(prdText: string): SectionMap {
   const sections: SectionMap = {};
   const lines = prdText.split(/\r?\n/);
@@ -26,9 +64,25 @@ function parseSections(prdText: string): SectionMap {
       continue;
     }
 
-    if (line.startsWith("## ")) {
-      currentSection = normalizeLine(line.replace(/^##\s+/, ""));
-      sections[currentSection] = [];
+    const markdownHeaderMatch = line.match(/^##\s+(.+)$/);
+    if (markdownHeaderMatch) {
+      currentSection = canonicalSectionName(markdownHeaderMatch[1]);
+      sections[currentSection] ??= [];
+      continue;
+    }
+
+    const colonHeaderMatch = line.match(/^([A-Za-z][A-Za-z0-9 /&()\-]+):\s*(.*)$/);
+    if (colonHeaderMatch) {
+      const sectionName = canonicalSectionName(colonHeaderMatch[1]);
+      const trailingValue = normalizeLine(colonHeaderMatch[2] || "");
+
+      currentSection = sectionName;
+      sections[currentSection] ??= [];
+
+      if (trailingValue) {
+        sections[currentSection].push(trailingValue);
+      }
+
       continue;
     }
 
@@ -66,8 +120,12 @@ function titleCase(value: string): string {
 }
 
 function extractProjectTitle(sections: SectionMap): string {
-  const charter = getSection(sections, "Project Charter");
+  const explicitTitle = getSection(sections, "Project Title");
+  if (explicitTitle.length > 0) {
+    return explicitTitle[0];
+  }
 
+  const charter = getSection(sections, "Project Charter");
   if (charter.length > 0) {
     return charter[0];
   }
@@ -94,13 +152,27 @@ function findSourceRefs(section: string, lines: string[], terms: string[]): Sour
 
 function extractPurposeItems(sections: SectionMap): string[] {
   const purpose = getSection(sections, "Purpose");
-  const items = purpose.filter(isListItem).map(stripBulletPrefix);
+  const scope = getSection(sections, "Scope");
 
-  if (items.length > 0) {
-    return dedupe(items);
+  const purposeListItems = purpose.filter(isListItem).map(stripBulletPrefix);
+  if (purposeListItems.length > 0) {
+    return dedupe(purposeListItems);
   }
 
-  return dedupe(purpose);
+  const scopeListItems = scope.filter(isListItem).map(stripBulletPrefix);
+
+  const purposeNonHeaderLines = purpose
+    .filter((line) => !isListItem(line))
+    .filter((line) => !line.endsWith(":"))
+    .map(stripBulletPrefix);
+
+  const combined = [...purposeNonHeaderLines, ...scopeListItems];
+
+  if (combined.length > 0) {
+    return dedupe(combined);
+  }
+
+  return dedupe(purpose.map(stripBulletPrefix));
 }
 
 function summarizeRequirement(text: string): string {
@@ -110,10 +182,9 @@ function summarizeRequirement(text: string): string {
     return "Requirement summary unavailable.";
   }
 
-  const firstChar = cleaned.charAt(0);
-  const startsUpper = firstChar === firstChar.toUpperCase();
+  const lower = cleaned.toLowerCase();
 
-  if (startsUpper) {
+  if (lower.startsWith("build ") || lower.startsWith("create ") || lower.startsWith("edit ") || lower.startsWith("search ") || lower.startsWith("view ")) {
     return cleaned.endsWith(".") ? cleaned : `${cleaned}.`;
   }
 
@@ -134,6 +205,14 @@ function classifyPriority(text: string): "high" | "medium" | "low" {
     return "high";
   }
 
+  if (
+    value.includes("audit") ||
+    value.includes("history") ||
+    value.includes("search")
+  ) {
+    return "medium";
+  }
+
   return "medium";
 }
 
@@ -141,27 +220,23 @@ function buildRequirements(sections: SectionMap): Requirement[] {
   const purposeItems = extractPurposeItems(sections);
   const prototypeGoals = getSection(sections, "Prototype Goals");
   const scope = getSection(sections, "Scope");
-  const frontendLines = Object.entries(sections)
-    .filter(([name]) => name.toLowerCase().startsWith("frontend"))
-    .flatMap(([, lines]) => lines);
+  const frontendLines = getSection(sections, "Frontend");
 
   return purposeItems.map((item, index) => {
     const id = `REQ-${String(index + 1).padStart(3, "0")}`;
     const title = titleCase(stripBulletPrefix(item).replace(/\.$/, ""));
     const summary = summarizeRequirement(item);
 
+    const searchTerms = item.split(" ").slice(0, 4);
+
     const sourceRefs: SourceReference[] = [
       {
         section: "Purpose",
         excerpt: item
       },
-      ...findSourceRefs("Prototype Goals", prototypeGoals, item.split(" ").slice(0, 3)),
-      ...findSourceRefs("Scope", scope, item.split(" ").slice(0, 3)),
-      ...findSourceRefs(
-        Object.keys(sections).find((name) => name.toLowerCase().startsWith("frontend")) || "Frontend",
-        frontendLines,
-        item.split(" ").slice(0, 3)
-      )
+      ...findSourceRefs("Prototype Goals", prototypeGoals, searchTerms),
+      ...findSourceRefs("Scope", scope, searchTerms),
+      ...findSourceRefs("Frontend", frontendLines, searchTerms)
     ];
 
     return {
