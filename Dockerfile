@@ -5,7 +5,7 @@ WORKDIR /app
 COPY package*.json ./
 
 RUN apt-get update \
-  && apt-get install -y curl gnupg ca-certificates \
+  && apt-get install -y curl gnupg ca-certificates libicu72 \
   && curl https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor > /usr/share/keyrings/microsoft-prod.gpg \
   && echo "deb [arch=amd64 signed-by=/usr/share/keyrings/microsoft-prod.gpg] https://packages.microsoft.com/debian/12/prod bookworm main" > /etc/apt/sources.list.d/microsoft-prod.list \
   && apt-get update \
