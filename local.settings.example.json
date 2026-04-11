@@ -1,0 +1,15 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "APP_ENV": "local",
+    "LOG_LEVEL": "debug",
+    "AZDO_ORG_URL": "https://dev.azure.com/your-org",
+    "AZDO_PROJECT": "your-project",
+    "AZDO_PAT": "replace-me",
+    "EXECUTE_APPROVAL_TOKEN": "replace-me",
+    "AUDIT_LOG_PATH": "./data/audit.jsonl",
+    "DEFAULT_PRD_PATH": "./samples/prd-golden.md",
+    "BACKLOG_MAPPING_PATH": "./data/backlog-mappings.json",
+    "AZDO_STORY_WORK_ITEM_TYPE": "User Story"
+  }
+}

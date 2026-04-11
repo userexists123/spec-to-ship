@@ -1,5 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { HttpRequest, HttpResponseInit, InvocationContext } from "@azure/functions";
+import {
+  HttpRequest,
+  HttpResponseInit,
+  InvocationContext,
+} from "@azure/functions";
 import { Mode, OperationType, AuditOutcome } from "../schemas/audit";
 import { getAppConfig } from "./config";
 import { writeAuditEvent } from "./auditLogger";
@@ -35,7 +39,11 @@ function getMode(request: HttpRequest): Mode {
 }
 
 function getRunId(request: HttpRequest): string {
-  return request.query.get("run_id") || request.headers.get("x-run-id") || "local-dev";
+  return (
+    request.query.get("run_id") ||
+    request.headers.get("x-run-id") ||
+    "local-dev"
+  );
 }
 
 function getEndpoint(request: HttpRequest): string {
@@ -46,7 +54,11 @@ function getApprovalToken(request: HttpRequest): string {
   return request.headers.get("x-approval-token") || "";
 }
 
-function getOutcome(operationType: OperationType, mode: Mode, status: number): AuditOutcome {
+function getOutcome(
+  operationType: OperationType,
+  mode: Mode,
+  status: number,
+): AuditOutcome {
   if (status >= 400) {
     return "error";
   }
@@ -61,7 +73,7 @@ function getOutcome(operationType: OperationType, mode: Mode, status: number): A
 export function withModeGuard(options: ModeGuardOptions) {
   return async function guardedHandler(
     request: HttpRequest,
-    context: InvocationContext
+    context: InvocationContext,
   ): Promise<HttpResponseInit> {
     const config = getAppConfig();
     const mode = getMode(request);
@@ -72,7 +84,10 @@ export function withModeGuard(options: ModeGuardOptions) {
     if (options.operationType === "write" && mode === "execute") {
       const providedToken = getApprovalToken(request);
 
-      if (!config.executeApprovalToken || providedToken !== config.executeApprovalToken) {
+      if (
+        !config.executeApprovalToken ||
+        providedToken !== config.executeApprovalToken
+      ) {
         await writeAuditEvent({
           timestamp: new Date().toISOString(),
           run_id: runId,
@@ -84,8 +99,8 @@ export function withModeGuard(options: ModeGuardOptions) {
           outcome: "blocked",
           metadata: {
             method: request.method,
-            reason: "missing_or_invalid_approval_token"
-          }
+            reason: "missing_or_invalid_approval_token",
+          },
         });
 
         return {
@@ -94,8 +109,8 @@ export function withModeGuard(options: ModeGuardOptions) {
             ok: false,
             mode,
             outcome: "blocked",
-            error: "Approval token required for write operations."
-          }
+            error: "Approval token required for write operations.",
+          },
         };
       }
     }
@@ -106,7 +121,7 @@ export function withModeGuard(options: ModeGuardOptions) {
         context,
         mode,
         runId,
-        requestId
+        requestId,
       });
 
       const status = result.response.status ?? 200;
@@ -124,8 +139,8 @@ export function withModeGuard(options: ModeGuardOptions) {
         preview_or_result_ref: result.previewOrResultRef,
         metadata: {
           method: request.method,
-          ...(result.metadata || {})
-        }
+          ...(result.metadata || {}),
+        },
       });
 
       return result.response;
@@ -143,9 +158,13 @@ export function withModeGuard(options: ModeGuardOptions) {
         outcome: "error",
         metadata: {
           method: request.method,
-          error: message
-        }
+          error: message,
+        },
       });
+
+      context.log(
+        `Mode guard caught error in ${options.actionName}: ${message}`,
+      );
 
       return {
         status: 500,
@@ -153,8 +172,8 @@ export function withModeGuard(options: ModeGuardOptions) {
           ok: false,
           mode,
           outcome: "error",
-          error: "Internal server error"
-        }
+          error: message,
+        },
       };
     }
   };

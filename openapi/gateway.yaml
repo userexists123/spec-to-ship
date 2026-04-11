@@ -1,0 +1,552 @@
+openapi: 3.1.0
+info:
+  title: Spec-to-Ship Gateway
+  version: 0.5.0
+  description: |
+    Action surface for the Spec-to-Ship prototype.
+
+    Session 5 goal: let an action-capable GPT parse a PRD into a stable backlog,
+    preview Azure DevOps Boards work item creation in dry_run, and only perform
+    real writes in execute mode when an approval token is explicitly supplied.
+
+servers:
+  - url: https://spec-to-ship-production.up.railway.app/api
+    description: Railway-hosted gateway
+
+tags:
+  - name: Health
+  - name: PRD
+  - name: Backlog
+
+paths:
+  /health:
+    get:
+      tags: [Health]
+      operationId: healthCheck
+      summary: Check gateway health
+      description: Returns a simple health payload and is safe to call.
+      parameters:
+        - $ref: '#/components/parameters/ModeQuery'
+        - $ref: '#/components/parameters/RunIdQuery'
+      responses:
+        '200':
+          description: Healthy gateway response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              examples:
+                default:
+                  value:
+                    status: ok
+                    environment: production
+                    message: Spec-to-Ship gateway is running
+
+  /prd/parse:
+    post:
+      tags: [PRD]
+      operationId: parsePrd
+      summary: Parse a PRD into a deterministic backlog bundle
+      description: |
+        Use this first. The GPT should reason over the PRD text, then call this route
+        to obtain the structured backlog bundle that downstream routes can reuse.
+      parameters:
+        - $ref: '#/components/parameters/ModeQuery'
+        - $ref: '#/components/parameters/RunIdQuery'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PrdParseRequest'
+            examples:
+              inlinePrd:
+                value:
+                  prdId: prd-hospital-ops-demo
+                  prdText: |
+                    ## Project Charter: Hospital Operations Dashboard - Nova 7
+
+                    ## Purpose
+                    Build a Hospital Operations Dashboard that allows users to:
+                    Browse hospitals and care units
+                    View and compare saved patient-flow runs from the analytics store
+      responses:
+        '200':
+          description: PRD parsed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PrdParseResponse'
+        '400':
+          description: PRD parsed but validation failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PrdParseResponse'
+    get:
+      tags: [PRD]
+      operationId: parseDefaultPrd
+      summary: Parse the configured default PRD fixture
+      parameters:
+        - $ref: '#/components/parameters/ModeQuery'
+        - $ref: '#/components/parameters/RunIdQuery'
+      responses:
+        '200':
+          description: Default PRD parsed successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PrdParseResponse'
+
+  /backlog/execute:
+    post:
+      tags: [Backlog]
+      operationId: executeBacklog
+      summary: Preview or create Azure DevOps work items from a backlog bundle
+      description: |
+        Default to mode=dry_run. In dry_run this returns the exact Epic and Story payloads
+        that would be sent to Azure DevOps. In execute mode, this creates real work items
+        only when x-approval-token matches the configured gateway approval token.
+      parameters:
+        - $ref: '#/components/parameters/ModeQuery'
+        - $ref: '#/components/parameters/RunIdQuery'
+        - $ref: '#/components/parameters/ApprovalHeader'
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BacklogExecuteRequest'
+            examples:
+              explicitBacklog:
+                value:
+                  backlog:
+                    prd_id: prd-hospital-ops-demo
+                    title: Hospital Operations Dashboard - Nova 7
+                    requirements:
+                      - id: REQ-001
+                        title: Browse Hospitals And Care Units
+                        summary: Users can browse hospitals and care units.
+                        priority: medium
+                        source_refs:
+                          - section: Purpose
+                            excerpt: Browse hospitals and care units
+                    epics:
+                      - id: EPIC-001
+                        title: Browse Hospitals And Care Units
+                        summary: Users can browse hospitals and care units.
+                        requirement_ids: [REQ-001]
+                        source_refs:
+                          - section: Purpose
+                            excerpt: Browse hospitals and care units
+                    stories:
+                      - id: STORY-001
+                        epic_id: EPIC-001
+                        title: Browse Hospitals And Care Units
+                        summary: Users can browse hospitals and care units.
+                        requirement_ids: [REQ-001]
+                        acceptance_criteria:
+                          - id: AC-001-001
+                            story_id: STORY-001
+                            text: Browse Hospitals And Care Units is represented in the generated backlog output.
+                        source_refs:
+                          - section: Purpose
+                            excerpt: Browse hospitals and care units
+                    risks:
+                      - id: RISK-001
+                        title: External Dependencies May Delay Delivery
+                        severity: medium
+                        related_requirement_ids: [REQ-001]
+                        mitigation_note: External sandbox services may delay delivery.
+              parseDefaultFixture:
+                value:
+                  prdId: prd-golden
+      responses:
+        '200':
+          description: Preview or execute result
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/BacklogExecutePreviewResponse'
+                  - $ref: '#/components/schemas/BacklogExecuteSuccessResponse'
+        '400':
+          description: Backlog validation failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '403':
+          description: Execute was attempted without a valid approval token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+components:
+  parameters:
+    ModeQuery:
+      name: mode
+      in: query
+      required: false
+      description: Defaults to dry_run. Use execute only after a human explicitly approves the write.
+      schema:
+        type: string
+        enum: [dry_run, execute]
+        default: dry_run
+
+    RunIdQuery:
+      name: run_id
+      in: query
+      required: false
+      description: Stable identifier used for audit logs, created work items, and traceability rows.
+      schema:
+        type: string
+        example: demo-20260411-s5
+
+    ApprovalHeader:
+      name: x-approval-token
+      in: header
+      required: false
+      description: Required only for execute writes.
+      schema:
+        type: string
+
+  schemas:
+    HealthResponse:
+      type: object
+      required: [status, environment, message]
+      properties:
+        status:
+          type: string
+          example: ok
+        environment:
+          type: string
+          example: production
+        message:
+          type: string
+          example: Spec-to-Ship gateway is running
+
+    SourceReference:
+      type: object
+      required: [section, excerpt]
+      properties:
+        section:
+          type: string
+        excerpt:
+          type: string
+
+    Requirement:
+      type: object
+      required: [id, title, summary, priority, source_refs]
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        summary:
+          type: string
+        priority:
+          type: string
+          enum: [high, medium, low]
+        source_refs:
+          type: array
+          items:
+            $ref: '#/components/schemas/SourceReference'
+
+    Epic:
+      type: object
+      required: [id, title, summary, requirement_ids, source_refs]
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        summary:
+          type: string
+        requirement_ids:
+          type: array
+          items:
+            type: string
+        source_refs:
+          type: array
+          items:
+            $ref: '#/components/schemas/SourceReference'
+
+    AcceptanceCriterion:
+      type: object
+      required: [id, story_id, text]
+      properties:
+        id:
+          type: string
+        story_id:
+          type: string
+        text:
+          type: string
+
+    Story:
+      type: object
+      required: [id, epic_id, title, summary, requirement_ids, acceptance_criteria, source_refs]
+      properties:
+        id:
+          type: string
+        epic_id:
+          type: string
+        title:
+          type: string
+        summary:
+          type: string
+        requirement_ids:
+          type: array
+          items:
+            type: string
+        acceptance_criteria:
+          type: array
+          items:
+            $ref: '#/components/schemas/AcceptanceCriterion'
+        source_refs:
+          type: array
+          items:
+            $ref: '#/components/schemas/SourceReference'
+
+    Risk:
+      type: object
+      required: [id, title, severity, related_requirement_ids, mitigation_note]
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        severity:
+          type: string
+          enum: [high, medium, low]
+        related_requirement_ids:
+          type: array
+          items:
+            type: string
+        mitigation_note:
+          type: string
+
+    BacklogBundle:
+      type: object
+      required: [prd_id, title, requirements, epics, stories, risks]
+      properties:
+        prd_id:
+          type: string
+        title:
+          type: string
+        requirements:
+          type: array
+          items:
+            $ref: '#/components/schemas/Requirement'
+        epics:
+          type: array
+          items:
+            $ref: '#/components/schemas/Epic'
+        stories:
+          type: array
+          items:
+            $ref: '#/components/schemas/Story'
+        risks:
+          type: array
+          items:
+            $ref: '#/components/schemas/Risk'
+
+    ValidationResult:
+      type: object
+      required: [ok, errors]
+      properties:
+        ok:
+          type: boolean
+        errors:
+          type: array
+          items:
+            type: string
+
+    PrdParseRequest:
+      type: object
+      additionalProperties: false
+      properties:
+        prdId:
+          type: string
+          description: Optional stable PRD identifier.
+        prdText:
+          type: string
+          description: Raw PRD markdown or plaintext. If omitted, the gateway uses the configured default PRD fixture.
+
+    PrdParseResponse:
+      type: object
+      required: [ok, prd_id, backlog, validation]
+      properties:
+        ok:
+          type: boolean
+        prd_id:
+          type: string
+        backlog:
+          $ref: '#/components/schemas/BacklogBundle'
+        validation:
+          $ref: '#/components/schemas/ValidationResult'
+
+    BacklogExecuteRequest:
+      type: object
+      additionalProperties: true
+      properties:
+        prdId:
+          type: string
+          description: Optional PRD id when using the default configured PRD fixture.
+        backlog:
+          $ref: '#/components/schemas/BacklogBundle'
+
+    WorkItemPayload:
+      type: object
+      required: [title, description]
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        parentId:
+          type: integer
+
+    BacklogPreviewEpic:
+      type: object
+      required: [local_id, work_item_type, payload]
+      properties:
+        local_id:
+          type: string
+        work_item_type:
+          type: string
+        payload:
+          $ref: '#/components/schemas/WorkItemPayload'
+
+    BacklogPreviewStory:
+      type: object
+      required: [local_id, parent_local_id, work_item_type, payload]
+      properties:
+        local_id:
+          type: string
+        parent_local_id:
+          type: string
+        work_item_type:
+          type: string
+        payload:
+          $ref: '#/components/schemas/WorkItemPayload'
+
+    BacklogExecutePreviewResponse:
+      type: object
+      required: [ok, mode, outcome, action, preview]
+      properties:
+        ok:
+          type: boolean
+          const: true
+        mode:
+          type: string
+          const: dry_run
+        outcome:
+          type: string
+          const: preview
+        action:
+          type: string
+          const: backlog_execute
+        preview:
+          type: object
+          required: [project, prd_id, backlog_title, epic_count, story_count, epics, stories]
+          properties:
+            project:
+              type: string
+            prd_id:
+              type: string
+            backlog_title:
+              type: string
+            epic_count:
+              type: integer
+            story_count:
+              type: integer
+            epics:
+              type: array
+              items:
+                $ref: '#/components/schemas/BacklogPreviewEpic'
+            stories:
+              type: array
+              items:
+                $ref: '#/components/schemas/BacklogPreviewStory'
+
+    BacklogMappingRecord:
+      type: object
+      required: [run_id, local_id, work_item_type, ado_work_item_id, ado_url]
+      properties:
+        run_id:
+          type: string
+        local_id:
+          type: string
+        work_item_type:
+          type: string
+        ado_work_item_id:
+          type: integer
+        ado_url:
+          type: string
+        parent_local_id:
+          type: string
+        requirement_ids:
+          type: array
+          items:
+            type: string
+
+    BacklogExecuteSuccessResponse:
+      type: object
+      required: [ok, mode, outcome, action, result]
+      properties:
+        ok:
+          type: boolean
+          const: true
+        mode:
+          type: string
+          const: execute
+        outcome:
+          type: string
+          const: success
+        action:
+          type: string
+          const: backlog_execute
+        result:
+          type: object
+          required: [project, prd_id, backlog_title, epic_count, story_count, created_items, mapping_path]
+          properties:
+            project:
+              type: string
+            prd_id:
+              type: string
+            backlog_title:
+              type: string
+            epic_count:
+              type: integer
+            story_count:
+              type: integer
+            created_items:
+              type: array
+              items:
+                $ref: '#/components/schemas/BacklogMappingRecord'
+            mapping_path:
+              type: string
+
+    ErrorResponse:
+      type: object
+      required: [ok, mode, outcome, error]
+      properties:
+        ok:
+          type: boolean
+          const: false
+        mode:
+          type: string
+          enum: [dry_run, execute]
+        outcome:
+          type: string
+          enum: [blocked, error]
+        error:
+          type: string
+        validation:
+          $ref: '#/components/schemas/ValidationResult'
