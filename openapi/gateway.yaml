@@ -1,13 +1,13 @@
 openapi: 3.1.0
 info:
   title: Spec-to-Ship Gateway
-  version: 0.5.0
+  version: 0.6.0
   description: |
     Action surface for the Spec-to-Ship prototype.
 
-    Session 5 goal: let an action-capable GPT parse a PRD into a stable backlog,
-    preview Azure DevOps Boards work item creation in dry_run, and only perform
-    real writes in execute mode when an approval token is explicitly supplied.
+    Session 6 goal: let the gateway read Azure DevOps pull request context and
+    changed files in a compact, GPT-friendly form so Session 7 can generate
+    acceptance-criteria-grounded review summaries.
 
 servers:
   - url: https://spec-to-ship-production.up.railway.app/api
@@ -17,6 +17,7 @@ tags:
   - name: Health
   - name: PRD
   - name: Backlog
+  - name: Repos
 
 paths:
   /health:
@@ -183,6 +184,62 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
+  /repos/pull-requests/{repoId}/{prId}/context:
+    get:
+      tags: [Repos]
+      operationId: getPullRequestContext
+      summary: Get pull request metadata and linked work items
+      description: |
+        Returns the compact pull request context needed for review reasoning:
+        title, description, status, branches, author, linked work items, and
+        fallback AB# references parsed from the title and description.
+      parameters:
+        - $ref: '#/components/parameters/RepoIdPath'
+        - $ref: '#/components/parameters/PrIdPath'
+        - $ref: '#/components/parameters/ModeQuery'
+        - $ref: '#/components/parameters/RunIdQuery'
+      responses:
+        '200':
+          description: Pull request context retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PullRequestContextRouteResponse'
+        '400':
+          description: Invalid repoId or prId
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  /repos/pull-requests/{repoId}/{prId}/changes:
+    get:
+      tags: [Repos]
+      operationId: getPullRequestChanges
+      summary: Get pull request changed files and compact change summaries
+      description: |
+        Returns a compact summary of changed files for the latest pull request
+        iteration. This is intentionally smaller than a raw diff so it remains
+        safe for audit logging and easy for downstream review reasoning.
+      parameters:
+        - $ref: '#/components/parameters/RepoIdPath'
+        - $ref: '#/components/parameters/PrIdPath'
+        - $ref: '#/components/parameters/ModeQuery'
+        - $ref: '#/components/parameters/RunIdQuery'
+      responses:
+        '200':
+          description: Pull request changes retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PullRequestChangesRouteResponse'
+        '400':
+          description: Invalid repoId or prId
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
 components:
   parameters:
     ModeQuery:
@@ -202,7 +259,7 @@ components:
       description: Stable identifier used for audit logs, created work items, and traceability rows.
       schema:
         type: string
-        example: demo-20260411-s5
+        example: demo-20260412-s6
 
     ApprovalHeader:
       name: x-approval-token
@@ -211,6 +268,23 @@ components:
       description: Required only for execute writes.
       schema:
         type: string
+
+    RepoIdPath:
+      name: repoId
+      in: path
+      required: true
+      description: Azure DevOps repository identifier.
+      schema:
+        type: string
+
+    PrIdPath:
+      name: prId
+      in: path
+      required: true
+      description: Azure DevOps pull request identifier.
+      schema:
+        type: integer
+        minimum: 1
 
   schemas:
     HealthResponse:
@@ -532,6 +606,130 @@ components:
                 $ref: '#/components/schemas/BacklogMappingRecord'
             mapping_path:
               type: string
+
+    PullRequestLinkedWorkItem:
+      type: object
+      required: [id]
+      properties:
+        id:
+          type: integer
+        url:
+          type: string
+        title:
+          type: string
+
+    PullRequestAuthor:
+      type: object
+      properties:
+        displayName:
+          type: string
+        uniqueName:
+          type: string
+
+    PullRequestContextResponse:
+      type: object
+      required: [repoId, prId, title, description, status, workItems, abReferences]
+      properties:
+        repoId:
+          type: string
+        prId:
+          type: integer
+        title:
+          type: string
+        description:
+          type: string
+        status:
+          type: string
+        sourceRefName:
+          type: string
+        targetRefName:
+          type: string
+        createdBy:
+          $ref: '#/components/schemas/PullRequestAuthor'
+        workItems:
+          type: array
+          items:
+            $ref: '#/components/schemas/PullRequestLinkedWorkItem'
+        abReferences:
+          type: array
+          items:
+            type: integer
+
+    PullRequestContextRouteResponse:
+      type: object
+      required: [ok, mode, outcome, action, result]
+      properties:
+        ok:
+          type: boolean
+          const: true
+        mode:
+          type: string
+          enum: [dry_run, execute]
+        outcome:
+          type: string
+          const: success
+        action:
+          type: string
+          const: pr_context
+        result:
+          $ref: '#/components/schemas/PullRequestContextResponse'
+
+    PullRequestFileChangeSummary:
+      type: object
+      required: [path, changeType, summary]
+      properties:
+        path:
+          type: string
+        changeType:
+          type: string
+        additions:
+          type: integer
+        deletions:
+          type: integer
+        isBinary:
+          type: boolean
+        summary:
+          type: string
+
+    PullRequestChangesResponse:
+      type: object
+      required: [repoId, prId, fileCount, returnedFileCount, truncated, files]
+      properties:
+        repoId:
+          type: string
+        prId:
+          type: integer
+        iterationId:
+          type: integer
+        fileCount:
+          type: integer
+        returnedFileCount:
+          type: integer
+        truncated:
+          type: boolean
+        files:
+          type: array
+          items:
+            $ref: '#/components/schemas/PullRequestFileChangeSummary'
+
+    PullRequestChangesRouteResponse:
+      type: object
+      required: [ok, mode, outcome, action, result]
+      properties:
+        ok:
+          type: boolean
+          const: true
+        mode:
+          type: string
+          enum: [dry_run, execute]
+        outcome:
+          type: string
+          const: success
+        action:
+          type: string
+          const: pr_changes
+        result:
+          $ref: '#/components/schemas/PullRequestChangesResponse'
 
     ErrorResponse:
       type: object

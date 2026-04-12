@@ -10,6 +10,21 @@ import {
 
 type SectionMap = Record<string, string[]>;
 
+const KNOWN_COLON_HEADERS = new Set([
+  "prd title",
+  "title",
+  "project title",
+  "project charter",
+  "purpose",
+  "scope",
+  "prototype goals",
+  "risks and assumptions",
+  "risks",
+  "assumptions",
+  "dependencies",
+  "frontend"
+]);
+
 function normalizeLine(value: string): string {
   return value.replace(/\s+/g, " ").trim();
 }
@@ -66,24 +81,43 @@ function parseSections(prdText: string): SectionMap {
 
     const markdownHeaderMatch = line.match(/^##\s+(.+)$/);
     if (markdownHeaderMatch) {
-      currentSection = canonicalSectionName(markdownHeaderMatch[1]);
+      const headerText = normalizeLine(markdownHeaderMatch[1]);
+      const inlineTitleMatch = headerText.match(/^([^:]+):\s*(.+)$/);
+
+      if (inlineTitleMatch) {
+        const headerName = normalizeLine(inlineTitleMatch[1]);
+        const trailingValue = normalizeLine(inlineTitleMatch[2]);
+
+        currentSection = canonicalSectionName(headerName);
+        sections[currentSection] ??= [];
+
+        if (trailingValue) {
+          sections[currentSection].push(trailingValue);
+        }
+
+        continue;
+      }
+
+      currentSection = canonicalSectionName(headerText);
       sections[currentSection] ??= [];
       continue;
     }
 
     const colonHeaderMatch = line.match(/^([A-Za-z][A-Za-z0-9 /&()\-]+):\s*(.*)$/);
     if (colonHeaderMatch) {
-      const sectionName = canonicalSectionName(colonHeaderMatch[1]);
+      const rawHeaderName = normalizeLine(colonHeaderMatch[1]);
       const trailingValue = normalizeLine(colonHeaderMatch[2] || "");
 
-      currentSection = sectionName;
-      sections[currentSection] ??= [];
+      if (KNOWN_COLON_HEADERS.has(rawHeaderName.toLowerCase())) {
+        currentSection = canonicalSectionName(rawHeaderName);
+        sections[currentSection] ??= [];
 
-      if (trailingValue) {
-        sections[currentSection].push(trailingValue);
+        if (trailingValue) {
+          sections[currentSection].push(trailingValue);
+        }
+
+        continue;
       }
-
-      continue;
     }
 
     if (currentSection) {
@@ -184,7 +218,13 @@ function summarizeRequirement(text: string): string {
 
   const lower = cleaned.toLowerCase();
 
-  if (lower.startsWith("build ") || lower.startsWith("create ") || lower.startsWith("edit ") || lower.startsWith("search ") || lower.startsWith("view ")) {
+  if (
+    lower.startsWith("build ") ||
+    lower.startsWith("create ") ||
+    lower.startsWith("edit ") ||
+    lower.startsWith("search ") ||
+    lower.startsWith("view ")
+  ) {
     return cleaned.endsWith(".") ? cleaned : `${cleaned}.`;
   }
 
@@ -205,11 +245,7 @@ function classifyPriority(text: string): "high" | "medium" | "low" {
     return "high";
   }
 
-  if (
-    value.includes("audit") ||
-    value.includes("history") ||
-    value.includes("search")
-  ) {
+  if (value.includes("audit") || value.includes("history") || value.includes("search")) {
     return "medium";
   }
 
