@@ -4,6 +4,7 @@ import type {
   AcceptanceCriterion,
   SourceReference
 } from "../schemas/backlog";
+import { getAppConfig } from "./config";
 
 export interface CreateWorkItemResult {
   id: number;
@@ -52,14 +53,20 @@ interface AzureDevOpsListResponse<T> {
   value: T[];
 }
 
+type JsonPatchOperation = {
+  op: "add";
+  path: string;
+  value: unknown;
+};
+
 export interface WorkItemPayloadPreview {
-  type: "Epic" | "User Story";
+  type: string;
   title: string;
   description: string;
   localId: string;
   parentLocalId?: string;
   requirementIds?: string[];
-  patch: Array<{ op: "add"; path: string; value: string }>;
+  patch: JsonPatchOperation[];
 }
 
 export interface BacklogExecutePreview {
@@ -72,7 +79,7 @@ export interface BacklogExecuteResult {
   runId: string;
   project: string;
   created: Array<{
-    type: "Epic" | "User Story";
+    type: string;
     localId: string;
     azureDevOpsId: number;
     url: string;
@@ -95,7 +102,7 @@ function encodePat(pat: string): string {
   return Buffer.from(`:${pat}`).toString("base64");
 }
 
-function toJsonPatchOperations(fields: Record<string, string>) {
+function toJsonPatchOperations(fields: Record<string, unknown>): JsonPatchOperation[] {
   return Object.entries(fields).map(([path, value]) => ({
     op: "add" as const,
     path,
@@ -110,10 +117,18 @@ export class AzureDevOpsClient {
 
   private readonly pat: string;
 
+  private readonly epicWorkItemType: string;
+
+  private readonly storyWorkItemType: string;
+
   constructor() {
+    const config = getAppConfig();
+
     this.orgUrl = getRequiredEnv("AZDO_ORG_URL").replace(/\/$/, "");
     this.project = getRequiredEnv("AZDO_PROJECT");
     this.pat = getRequiredEnv("AZDO_PAT");
+    this.epicWorkItemType = config.epicWorkItemType || "Epic";
+    this.storyWorkItemType = config.storyWorkItemType || "Issue";
   }
 
   getProject(): string {
@@ -127,7 +142,7 @@ export class AzureDevOpsClient {
         .join("\n\n");
 
       return {
-        type: "Epic",
+        type: this.epicWorkItemType,
         title: epic.title,
         description,
         localId: epic.id,
@@ -153,18 +168,27 @@ export class AzureDevOpsClient {
 
       const description = descriptionParts.join("\n\n");
 
+      const patchFields: Record<string, unknown> = {
+        "/fields/System.Title": story.title,
+        "/fields/System.Description": description,
+        "/fields/System.Tags": this.buildTags(runId, story.id)
+      };
+
+      if (parentLocalId) {
+        patchFields["/relations/-"] = {
+          rel: "System.LinkTypes.Hierarchy-Reverse",
+          url: `${this.orgUrl}/${this.project}/_apis/wit/workItems/{PARENT_ID}`
+        };
+      }
+
       return {
-        type: "User Story",
+        type: this.storyWorkItemType,
         title: story.title,
         description,
         localId: story.id,
         parentLocalId,
         requirementIds: story.requirement_ids,
-        patch: toJsonPatchOperations({
-          "/fields/System.Title": story.title,
-          "/fields/System.Description": description,
-          "/fields/System.Tags": this.buildTags(runId, story.id)
-        })
+        patch: toJsonPatchOperations(patchFields)
       };
     });
 
@@ -184,7 +208,7 @@ export class AzureDevOpsClient {
         .filter(Boolean)
         .join("\n\n");
 
-      const createdEpic = await this.createWorkItem("Epic", {
+      const createdEpic = await this.createWorkItem(this.epicWorkItemType, {
         "/fields/System.Title": epic.title,
         "/fields/System.Description": description,
         "/fields/System.Tags": this.buildTags(runId, epic.id)
@@ -193,7 +217,7 @@ export class AzureDevOpsClient {
       epicIdMap.set(epic.id, createdEpic.id);
 
       created.push({
-        type: "Epic",
+        type: this.epicWorkItemType,
         localId: epic.id,
         azureDevOpsId: createdEpic.id,
         url: createdEpic.url,
@@ -210,7 +234,7 @@ export class AzureDevOpsClient {
         .filter(Boolean)
         .join("\n\n");
 
-      const fields: Record<string, string> = {
+      const fields: Record<string, unknown> = {
         "/fields/System.Title": story.title,
         "/fields/System.Description": description,
         "/fields/System.Tags": this.buildTags(runId, story.id)
@@ -219,16 +243,16 @@ export class AzureDevOpsClient {
       const parentAzureDevOpsId = story.epic_id ? epicIdMap.get(story.epic_id) : undefined;
 
       if (parentAzureDevOpsId) {
-        fields["/relations/-"] = JSON.stringify({
+        fields["/relations/-"] = {
           rel: "System.LinkTypes.Hierarchy-Reverse",
           url: `${this.orgUrl}/${this.project}/_apis/wit/workItems/${parentAzureDevOpsId}`
-        });
+        };
       }
 
-      const createdStory = await this.createWorkItem("User Story", fields);
+      const createdStory = await this.createWorkItem(this.storyWorkItemType, fields);
 
       created.push({
-        type: "User Story",
+        type: this.storyWorkItemType,
         localId: story.id,
         azureDevOpsId: createdStory.id,
         url: createdStory.url,
@@ -314,8 +338,8 @@ export class AzureDevOpsClient {
   }
 
   private async createWorkItem(
-    workItemType: "Epic" | "User Story",
-    fields: Record<string, string>
+    workItemType: string,
+    fields: Record<string, unknown>
   ): Promise<CreateWorkItemResult> {
     const patch = toJsonPatchOperations(fields);
     const url = new URL(

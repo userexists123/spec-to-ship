@@ -9,6 +9,7 @@ export function getAppConfig() {
     auditLogPath: process.env.AUDIT_LOG_PATH || "./data/audit.jsonl",
     defaultPrdPath: process.env.DEFAULT_PRD_PATH || "./samples/prd-golden.md",
     backlogMappingPath: process.env.BACKLOG_MAPPING_PATH || "./data/backlog-mappings.json",
+    epicWorkItemType: process.env.AZDO_EPIC_WORK_ITEM_TYPE || "Epic",
     storyWorkItemType: process.env.AZDO_STORY_WORK_ITEM_TYPE || "Issue"
   };
 }
