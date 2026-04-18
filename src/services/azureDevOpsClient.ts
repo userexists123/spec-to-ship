@@ -43,6 +43,12 @@ export interface AzureDevOpsIterationChangeEntry {
   };
 }
 
+export interface AzureDevOpsWorkItem {
+  id: number;
+  url: string;
+  fields?: Record<string, unknown>;
+}
+
 interface AzureDevOpsCreateWorkItemResponse {
   id: number;
   url: string;
@@ -279,6 +285,16 @@ export class AzureDevOpsClient {
 
     return this.requestJson<AzureDevOpsPullRequest>(url.toString());
   }
+
+  async getWorkItem(workItemId: number): Promise<AzureDevOpsWorkItem> {
+  const url = new URL(
+    `${this.orgUrl}/${this.project}/_apis/wit/workitems/${workItemId}`
+  );
+
+  url.searchParams.set("api-version", "7.1");
+
+  return this.requestJson<AzureDevOpsWorkItem>(url.toString());
+}
 
   async getPullRequestWorkItems(
     repoId: string,

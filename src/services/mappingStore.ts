@@ -27,6 +27,18 @@ async function readExistingMappings(filePath: string): Promise<BacklogMappingRec
   }
 }
 
+export async function readBacklogMappings(): Promise<BacklogMappingRecord[]> {
+  const config = getAppConfig();
+  return readExistingMappings(config.backlogMappingPath);
+}
+
+export async function findBacklogMappingByAdoWorkItemId(
+  adoWorkItemId: number
+): Promise<BacklogMappingRecord | undefined> {
+  const mappings = await readBacklogMappings();
+  return mappings.find((record) => record.ado_work_item_id === adoWorkItemId);
+}
+
 export async function appendBacklogMappings(records: BacklogMappingRecord[]): Promise<string> {
   const config = getAppConfig();
   const filePath = config.backlogMappingPath;
