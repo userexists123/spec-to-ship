@@ -1,0 +1,44 @@
+{
+  "prdId": "prd-golden",
+  "title": "Traffic Dashboard - Gemini 20",
+  "repoId": "0757efe5-b374-457c-a365-3e04f3020e92",
+  "prId": 1,
+  "prThreadId": 5,
+  "runId": "demo-20260419-s8",
+  "releaseNotes": {
+    "prdId": "prd-golden",
+    "repoId": "0757efe5-b374-457c-a365-3e04f3020e92",
+    "prId": 1,
+    "customerFacing": [
+      {
+        "id": "RN-001",
+        "requirementId": "REQ-001",
+        "title": "Browse intersections and metadata",
+        "summary": "Browse intersections and metadata is now represented in the prototype workflow through validate rendering performance under load."
+      }
+    ],
+    "internalFacing": [
+      {
+        "id": "RN-101",
+        "requirementId": "REQ-001",
+        "title": "Browse intersections and metadata implementation trace",
+        "summary": "Tracked via STORY-001 and Azure DevOps work item 248 (Validate Rendering Performance Under Load)."
+      }
+    ]
+  },
+  "rows": [
+    {
+      "requirement_id": "REQ-001",
+      "requirement_title": "Browse intersections and metadata",
+      "story_id": "STORY-001",
+      "ado_work_item_id": 248,
+      "ado_url": "https://dev.azure.com/agentic-booth/fa33a4c0-e1e2-4686-a6ad-57cf9e400072/_apis/wit/workItems/248",
+      "pr_id": 1,
+      "pr_url": "https://dev.azure.com/agentic-booth/Spec%20to%20Ship%20Sandbox/_git/0757efe5-b374-457c-a365-3e04f3020e92/pullrequest/1",
+      "pr_thread_id": 5,
+      "pr_thread_url": "https://dev.azure.com/agentic-booth/Spec%20to%20Ship%20Sandbox/_git/0757efe5-b374-457c-a365-3e04f3020e92/pullrequest/1?_a=discussion&threadId=5",
+      "release_note_item_id": "RN-001",
+      "run_id": "demo-20260419-s8"
+    }
+  ]
+}

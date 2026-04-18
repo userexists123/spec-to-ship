@@ -13,6 +13,15 @@ export async function writeAuditEvent(event: AuditEvent): Promise<void> {
     metadata: redactMetadata(event.metadata)
   };
 
-  await mkdir(dirname(filePath), { recursive: true });
-  await appendFile(filePath, `${JSON.stringify(sanitizedEvent)}\n`, "utf8");
+  try {
+    await mkdir(dirname(filePath), { recursive: true });
+    await appendFile(filePath, `${JSON.stringify(sanitizedEvent)}\n`, "utf8");
+  } catch {
+    console.error(
+      JSON.stringify({
+        fallback: "console_audit",
+        event: sanitizedEvent
+      })
+    );
+  }
 }

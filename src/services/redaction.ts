@@ -3,16 +3,22 @@ import { createHash } from "node:crypto";
 const REDACTED_KEYS = new Set([
   "authorization",
   "pat",
+  "azdo_pat",
+  "azdopat",
   "token",
   "approvaltoken",
+  "x-approval-token",
+  "executeapprovaltoken",
   "apikey",
+  "password",
+  "secret",
   "cookie",
   "set-cookie"
 ]);
 
-const MAX_STRING_LENGTH = 300;
-const MAX_ARRAY_LENGTH = 20;
-const EXCERPT_LENGTH = 120;
+const MAX_STRING_LENGTH = 240;
+const MAX_ARRAY_LENGTH = 12;
+const EXCERPT_LENGTH = 100;
 
 function hashValue(value: string): string {
   return createHash("sha256").update(value).digest("hex");
@@ -36,7 +42,10 @@ function redactValue(value: unknown): unknown {
   }
 
   if (Array.isArray(value)) {
-    return value.slice(0, MAX_ARRAY_LENGTH).map(redactValue);
+    return {
+      count: value.length,
+      items: value.slice(0, MAX_ARRAY_LENGTH).map(redactValue)
+    };
   }
 
   if (value && typeof value === "object") {
@@ -56,6 +65,8 @@ function redactValue(value: unknown): unknown {
           normalizedKey.includes("patch") ||
           normalizedKey.includes("content") ||
           normalizedKey.includes("body") ||
+          normalizedKey.includes("comment") ||
+          normalizedKey.includes("description") ||
           normalizedKey.includes("prd"))
       ) {
         output[key] = summarizeLargeText(nestedValue);

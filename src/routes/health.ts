@@ -28,11 +28,14 @@ export const health = withModeGuard({
         jsonBody: {
           status: "ok",
           environment: config.environment,
+          demoMode: config.demoMode,
+          liveApisEnabled: !config.demoMode,
           message: "Spec-to-Ship gateway is running"
         }
       },
       metadata: {
-        environment: config.environment
+        environment: config.environment,
+        demoMode: config.demoMode
       }
     };
   }

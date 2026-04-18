@@ -1,0 +1,20 @@
+{
+  "repoId": "0757efe5-b374-457c-a365-3e04f3020e92",
+  "prId": 1,
+  "title": "Add acceptance-criteria-based PR summary flow AB#248",
+  "description": "Implements the demo review path and summary thread formatting for the sandbox pull request. AB#248",
+  "status": "active",
+  "sourceRefName": "refs/heads/feature/session-08-pr-comment",
+  "targetRefName": "refs/heads/main",
+  "createdBy": {
+    "displayName": "Edwin Yeldho",
+    "uniqueName": "edwin.yeldho@example.com"
+  },
+  "workItems": [
+    {
+      "id": 248,
+      "url": "https://dev.azure.com/agentic-booth/fa33a4c0-e1e2-4686-a6ad-57cf9e400072/_apis/wit/workItems/248"
+    }
+  ],
+  "abReferences": [248]
+}

@@ -1,0 +1,28 @@
+{
+  "repoId": "0757efe5-b374-457c-a365-3e04f3020e92",
+  "prId": 1,
+  "iterationId": 1,
+  "fileCount": 3,
+  "returnedFileCount": 3,
+  "truncated": false,
+  "files": [
+    {
+      "path": "/src/routes/prComment.ts",
+      "changeType": "edit",
+      "isBinary": false,
+      "summary": "Modified /src/routes/prComment.ts to support deterministic review comment posting."
+    },
+    {
+      "path": "/src/services/prCommentFormatter.ts",
+      "changeType": "add",
+      "isBinary": false,
+      "summary": "Added /src/services/prCommentFormatter.ts to format summary, criteria, findings, and follow-up sections."
+    },
+    {
+      "path": "/src/services/azureDevOpsClient.ts",
+      "changeType": "edit",
+      "isBinary": false,
+      "summary": "Modified /src/services/azureDevOpsClient.ts to read and create pull request discussion threads."
+    }
+  ]
+}

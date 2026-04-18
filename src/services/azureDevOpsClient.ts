@@ -1,9 +1,16 @@
-import { env } from "node:process";
 import type {
   BacklogBundle,
   AcceptanceCriterion,
   SourceReference
 } from "../schemas/backlog";
+import {
+  appendDemoThreadState,
+  buildDemoWorkItemPayload,
+  isDemoModeEnabled,
+  readDemoPrChanges,
+  readDemoPrContext,
+  readDemoThreadState
+} from "./demoMode";
 import { getAppConfig } from "./config";
 
 export interface CreateWorkItemResult {
@@ -105,16 +112,6 @@ export interface BacklogExecuteResult {
   }>;
 }
 
-function getRequiredEnv(name: string): string {
-  const value = env[name];
-
-  if (!value) {
-    throw new Error(`Missing required environment variable: ${name}`);
-  }
-
-  return value;
-}
-
 function encodePat(pat: string): string {
   return Buffer.from(`:${pat}`).toString("base64");
 }
@@ -125,6 +122,14 @@ function toJsonPatchOperations(fields: Record<string, unknown>): JsonPatchOperat
     path,
     value
   }));
+}
+
+function normalizeStoryType(value: string): string {
+  if (value === "Issue") {
+    return "User Story";
+  }
+
+  return value;
 }
 
 export class AzureDevOpsClient {
@@ -138,14 +143,31 @@ export class AzureDevOpsClient {
 
   private readonly storyWorkItemType: string;
 
+  private readonly demoMode: boolean;
+
   constructor() {
     const config = getAppConfig();
 
-    this.orgUrl = getRequiredEnv("AZDO_ORG_URL").replace(/\/$/, "");
-    this.project = getRequiredEnv("AZDO_PROJECT");
-    this.pat = getRequiredEnv("AZDO_PAT");
+    this.orgUrl = config.azdoOrgUrl.replace(/\/$/, "");
+    this.project = config.azdoProject;
+    this.pat = config.azdoPat;
     this.epicWorkItemType = config.epicWorkItemType || "Epic";
     this.storyWorkItemType = config.storyWorkItemType || "Issue";
+    this.demoMode = isDemoModeEnabled();
+
+    if (!this.demoMode) {
+      if (!this.orgUrl) {
+        throw new Error("Missing required environment variable: AZDO_ORG_URL");
+      }
+
+      if (!this.project) {
+        throw new Error("Missing required environment variable: AZDO_PROJECT");
+      }
+
+      if (!this.pat) {
+        throw new Error("Missing required environment variable: AZDO_PAT");
+      }
+    }
   }
 
   getProject(): string {
@@ -199,7 +221,7 @@ export class AzureDevOpsClient {
       }
 
       return {
-        type: this.storyWorkItemType,
+        type: normalizeStoryType(this.storyWorkItemType),
         title: story.title,
         description,
         localId: story.id,
@@ -217,6 +239,42 @@ export class AzureDevOpsClient {
   }
 
   async executeBacklog(bundle: BacklogBundle, runId: string): Promise<BacklogExecuteResult> {
+    if (this.demoMode) {
+      const created: BacklogExecuteResult["created"] = [];
+      const epicIdMap = new Map<string, number>();
+      let nextId = 91000;
+
+      for (const epic of bundle.epics) {
+        nextId += 1;
+        epicIdMap.set(epic.id, nextId);
+        created.push({
+          type: this.epicWorkItemType,
+          localId: epic.id,
+          azureDevOpsId: nextId,
+          url: `${this.orgUrl}/${this.project}/_apis/wit/workItems/${nextId}`,
+          requirementIds: epic.requirement_ids
+        });
+      }
+
+      for (const story of bundle.stories) {
+        nextId += 1;
+        created.push({
+          type: this.storyWorkItemType,
+          localId: story.id,
+          azureDevOpsId: nextId,
+          url: `${this.orgUrl}/${this.project}/_apis/wit/workItems/${nextId}`,
+          parentAzureDevOpsId: story.epic_id ? epicIdMap.get(story.epic_id) : undefined,
+          requirementIds: story.requirement_ids
+        });
+      }
+
+      return {
+        runId,
+        project: this.project,
+        created
+      };
+    }
+
     const created: BacklogExecuteResult["created"] = [];
     const epicIdMap = new Map<string, number>();
 
@@ -286,6 +344,20 @@ export class AzureDevOpsClient {
   }
 
   async getPullRequest(repoId: string, prId: number): Promise<AzureDevOpsPullRequest> {
+    if (this.demoMode) {
+      const fixture = await readDemoPrContext();
+
+      return {
+        pullRequestId: prId,
+        title: fixture.title,
+        description: fixture.description,
+        status: fixture.status,
+        sourceRefName: fixture.sourceRefName,
+        targetRefName: fixture.targetRefName,
+        createdBy: fixture.createdBy
+      };
+    }
+
     const url = new URL(
       `${this.orgUrl}/${this.project}/_apis/git/repositories/${encodeURIComponent(
         repoId
@@ -298,9 +370,11 @@ export class AzureDevOpsClient {
   }
 
   async getWorkItem(workItemId: number): Promise<AzureDevOpsWorkItem> {
-    const url = new URL(
-      `${this.orgUrl}/${this.project}/_apis/wit/workitems/${workItemId}`
-    );
+    if (this.demoMode) {
+      return buildDemoWorkItemPayload(workItemId);
+    }
+
+    const url = new URL(`${this.orgUrl}/${this.project}/_apis/wit/workitems/${workItemId}`);
 
     url.searchParams.set("api-version", "7.1");
 
@@ -311,6 +385,14 @@ export class AzureDevOpsClient {
     repoId: string,
     prId: number
   ): Promise<AzureDevOpsPullRequestWorkItemRef[]> {
+    if (this.demoMode) {
+      const fixture = await readDemoPrContext();
+      return fixture.workItems.map((workItem) => ({
+        id: String(workItem.id),
+        url: workItem.url
+      }));
+    }
+
     const url = new URL(
       `${this.orgUrl}/${this.project}/_apis/git/repositories/${encodeURIComponent(
         repoId
@@ -319,14 +401,20 @@ export class AzureDevOpsClient {
 
     url.searchParams.set("api-version", "7.1");
 
-    const response = await this.requestJson<AzureDevOpsListResponse<AzureDevOpsPullRequestWorkItemRef>>(
-      url.toString()
-    );
+    const response =
+      await this.requestJson<AzureDevOpsListResponse<AzureDevOpsPullRequestWorkItemRef>>(
+        url.toString()
+      );
 
     return response.value;
   }
 
   async getPullRequestIterations(repoId: string, prId: number): Promise<AzureDevOpsIteration[]> {
+    if (this.demoMode) {
+      const fixture = await readDemoPrChanges();
+      return fixture.iterationId ? [{ id: fixture.iterationId }] : [];
+    }
+
     const url = new URL(
       `${this.orgUrl}/${this.project}/_apis/git/repositories/${encodeURIComponent(
         repoId
@@ -347,6 +435,19 @@ export class AzureDevOpsClient {
     prId: number,
     iterationId: number
   ): Promise<AzureDevOpsIterationChangeEntry[]> {
+    if (this.demoMode) {
+      const fixture = await readDemoPrChanges();
+      return fixture.files.map((file, index) => ({
+        changeTrackingId: index + 1,
+        changeType: file.changeType,
+        item: {
+          path: file.path,
+          isFolder: false,
+          gitObjectType: file.isBinary ? "tree" : "blob"
+        }
+      }));
+    }
+
     const url = new URL(
       `${this.orgUrl}/${this.project}/_apis/git/repositories/${encodeURIComponent(
         repoId
@@ -368,6 +469,17 @@ export class AzureDevOpsClient {
     repoId: string,
     prId: number
   ): Promise<AzureDevOpsPullRequestThread[]> {
+    if (this.demoMode) {
+      const persistedThreads = await readDemoThreadState();
+      return persistedThreads
+        .filter((thread) => thread.repoId === repoId && thread.prId === prId)
+        .map((thread) => ({
+          id: thread.threadId,
+          status: "active",
+          comments: [{ id: 1, content: thread.content }]
+        }));
+    }
+
     const url = new URL(
       `${this.orgUrl}/${this.project}/_apis/git/repositories/${encodeURIComponent(
         repoId
@@ -402,6 +514,29 @@ export class AzureDevOpsClient {
     prId: number,
     content: string
   ): Promise<AzureDevOpsPullRequestThread> {
+    if (this.demoMode) {
+      const threads = await readDemoThreadState();
+      const nextId =
+        threads
+          .filter((thread) => thread.repoId === repoId && thread.prId === prId)
+          .reduce((maxValue, thread) => Math.max(maxValue, thread.threadId), 4) + 1;
+
+      await appendDemoThreadState({
+        repoId,
+        prId,
+        threadId: nextId,
+        runId: this.extractRunId(content),
+        content,
+        url: this.buildPullRequestThreadUrl(repoId, prId, nextId)
+      });
+
+      return {
+        id: nextId,
+        status: "active",
+        comments: [{ id: 1, content }]
+      };
+    }
+
     const url = new URL(
       `${this.orgUrl}/${this.project}/_apis/git/repositories/${encodeURIComponent(
         repoId
@@ -449,6 +584,11 @@ export class AzureDevOpsClient {
     return `${this.orgUrl}/${this.project}/_git/${encodeURIComponent(
       repoId
     )}/pullrequest/${prId}?_a=discussion&threadId=${threadId}`;
+  }
+
+  private extractRunId(content: string): string {
+    const match = content.match(/run_id:\s*([^\s]+)/i);
+    return match?.[1] ?? "demo-run";
   }
 
   private async createWorkItem(
