@@ -49,6 +49,17 @@ export interface AzureDevOpsWorkItem {
   fields?: Record<string, unknown>;
 }
 
+export interface AzureDevOpsPullRequestThreadComment {
+  id: number;
+  content?: string;
+}
+
+export interface AzureDevOpsPullRequestThread {
+  id: number;
+  status?: string;
+  comments?: AzureDevOpsPullRequestThreadComment[];
+}
+
 interface AzureDevOpsCreateWorkItemResponse {
   id: number;
   url: string;
@@ -287,14 +298,14 @@ export class AzureDevOpsClient {
   }
 
   async getWorkItem(workItemId: number): Promise<AzureDevOpsWorkItem> {
-  const url = new URL(
-    `${this.orgUrl}/${this.project}/_apis/wit/workitems/${workItemId}`
-  );
+    const url = new URL(
+      `${this.orgUrl}/${this.project}/_apis/wit/workitems/${workItemId}`
+    );
 
-  url.searchParams.set("api-version", "7.1");
+    url.searchParams.set("api-version", "7.1");
 
-  return this.requestJson<AzureDevOpsWorkItem>(url.toString());
-}
+    return this.requestJson<AzureDevOpsWorkItem>(url.toString());
+  }
 
   async getPullRequestWorkItems(
     repoId: string,
@@ -351,6 +362,87 @@ export class AzureDevOpsClient {
     }>(url.toString());
 
     return response.changeEntries ?? [];
+  }
+
+  async getPullRequestThreads(
+    repoId: string,
+    prId: number
+  ): Promise<AzureDevOpsPullRequestThread[]> {
+    const url = new URL(
+      `${this.orgUrl}/${this.project}/_apis/git/repositories/${encodeURIComponent(
+        repoId
+      )}/pullRequests/${prId}/threads`
+    );
+
+    url.searchParams.set("api-version", "7.1");
+
+    const response = await this.requestJson<AzureDevOpsListResponse<AzureDevOpsPullRequestThread>>(
+      url.toString()
+    );
+
+    return response.value;
+  }
+
+  async findPullRequestThreadByRunId(
+    repoId: string,
+    prId: number,
+    runId: string
+  ): Promise<AzureDevOpsPullRequestThread | null> {
+    const threads = await this.getPullRequestThreads(repoId, prId);
+
+    return (
+      threads.find((thread) =>
+        (thread.comments ?? []).some((comment) => comment.content?.includes(`run_id: ${runId}`))
+      ) ?? null
+    );
+  }
+
+  async createPullRequestThread(
+    repoId: string,
+    prId: number,
+    content: string
+  ): Promise<AzureDevOpsPullRequestThread> {
+    const url = new URL(
+      `${this.orgUrl}/${this.project}/_apis/git/repositories/${encodeURIComponent(
+        repoId
+      )}/pullRequests/${prId}/threads`
+    );
+
+    url.searchParams.set("api-version", "7.1");
+
+    const response = await fetch(url.toString(), {
+      method: "POST",
+      headers: {
+        Authorization: `Basic ${encodePat(this.pat)}`,
+        Accept: "application/json",
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        comments: [
+          {
+            parentCommentId: 0,
+            content,
+            commentType: 1
+          }
+        ],
+        status: 1
+      })
+    });
+
+    if (!response.ok) {
+      const body = await response.text();
+      throw new Error(
+        `Azure DevOps thread creation failed (${response.status} ${response.statusText}): ${body}`
+      );
+    }
+
+    return (await response.json()) as AzureDevOpsPullRequestThread;
+  }
+
+  buildPullRequestThreadUrl(repoId: string, prId: number, threadId: number): string {
+    return `${this.orgUrl}/${this.project}/_git/${encodeURIComponent(
+      repoId
+    )}/pullrequest/${prId}?_a=discussion&threadId=${threadId}`;
   }
 
   private async createWorkItem(

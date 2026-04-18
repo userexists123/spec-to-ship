@@ -1,0 +1,34 @@
+{
+  "review": {
+    "repoId": "0757efe5-b374-457c-a365-3e04f3020e92",
+    "prId": 1,
+    "summary": "Reviewed 2 acceptance criteria: 0 met, 0 partial, 2 not evident.",
+    "linkedWorkItemIds": [248],
+    "requirementIds": [],
+    "checklist": [
+      {
+        "criterionId": "AC-001",
+        "workItemId": 248,
+        "workItemTitle": "Validate Rendering Performance Under Load",
+        "requirementIds": [],
+        "criterion": "Rendering performance under multiple active units is represented in the backlog output.",
+        "status": "not_evident",
+        "evidence": [],
+        "note": "No changed file or summary point clearly supports this criterion."
+      },
+      {
+        "criterionId": "AC-002",
+        "workItemId": 248,
+        "workItemTitle": "Validate Rendering Performance Under Load",
+        "requirementIds": [],
+        "criterion": "The review flow includes a concise, acceptance-criteria-grounded summary.",
+        "status": "not_evident",
+        "evidence": [],
+        "note": "No changed file or summary point clearly supports this criterion."
+      }
+    ],
+    "findings": [],
+    "possibleScopeCreep": [],
+    "followUps": []
+  }
+}
