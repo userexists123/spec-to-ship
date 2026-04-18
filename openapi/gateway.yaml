@@ -1,13 +1,18 @@
 openapi: 3.1.0
 info:
   title: Spec-to-Ship Gateway
-  version: 0.6.0
+  version: 0.10.2
   description: |
     Action surface for the Spec-to-Ship prototype.
 
-    Session 6 goal: let the gateway read Azure DevOps pull request context and
-    changed files in a compact, GPT-friendly form so Session 7 can generate
-    acceptance-criteria-grounded review summaries.
+    Supports:
+    - PRD parsing
+    - backlog preview and execute
+    - pull request context and changes
+    - acceptance-criteria-grounded review
+    - PR summary comment preview and execute
+    - release notes and traceability
+    - demo mode / fallback validation
 
 servers:
   - url: https://spec-to-ship-production.up.railway.app/api
@@ -18,175 +23,180 @@ tags:
   - name: PRD
   - name: Backlog
   - name: Repos
+  - name: Traceability
 
 paths:
   /health:
     get:
-      tags: [Health]
+      tags:
+        - Health
       operationId: healthCheck
       summary: Check gateway health
-      description: Returns a simple health payload and is safe to call.
+      description: Returns a simple health payload and indicates whether demo mode is active.
       parameters:
-        - $ref: '#/components/parameters/ModeQuery'
-        - $ref: '#/components/parameters/RunIdQuery'
+        - name: mode
+          in: query
+          required: false
+          description: Defaults to dry_run.
+          schema:
+            type: string
+            enum:
+              - dry_run
+              - execute
+            default: dry_run
+        - name: run_id
+          in: query
+          required: false
+          description: Stable identifier used for audit logs and traceability rows.
+          schema:
+            type: string
+            example: demo-20260426-s10
       responses:
-        '200':
+        "200":
           description: Healthy gateway response
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/HealthResponse'
-              examples:
-                default:
-                  value:
-                    status: ok
-                    environment: production
-                    message: Spec-to-Ship gateway is running
+                $ref: "#/components/schemas/HealthResponse"
 
   /prd/parse:
     post:
-      tags: [PRD]
+      tags:
+        - PRD
       operationId: parsePrd
       summary: Parse a PRD into a deterministic backlog bundle
       description: |
         Use this first. The GPT should reason over the PRD text, then call this route
         to obtain the structured backlog bundle that downstream routes can reuse.
       parameters:
-        - $ref: '#/components/parameters/ModeQuery'
-        - $ref: '#/components/parameters/RunIdQuery'
+        - name: mode
+          in: query
+          required: false
+          description: Defaults to dry_run.
+          schema:
+            type: string
+            enum:
+              - dry_run
+              - execute
+            default: dry_run
+        - name: run_id
+          in: query
+          required: false
+          description: Stable identifier used for audit logs and traceability.
+          schema:
+            type: string
+            example: demo-20260426-s10
       requestBody:
         required: false
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/PrdParseRequest'
-            examples:
-              inlinePrd:
-                value:
-                  prdId: prd-hospital-ops-demo
-                  prdText: |
-                    ## Project Charter: Hospital Operations Dashboard - Nova 7
-
-                    ## Purpose
-                    Build a Hospital Operations Dashboard that allows users to:
-                    Browse hospitals and care units
-                    View and compare saved patient-flow runs from the analytics store
+              $ref: "#/components/schemas/PrdParseRequest"
       responses:
-        '200':
+        "200":
           description: PRD parsed successfully
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PrdParseResponse'
-        '400':
+                $ref: "#/components/schemas/PrdParseResponse"
+        "400":
           description: PRD parsed but validation failed
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PrdParseResponse'
+                $ref: "#/components/schemas/PrdParseResponse"
+
     get:
-      tags: [PRD]
+      tags:
+        - PRD
       operationId: parseDefaultPrd
       summary: Parse the configured default PRD fixture
       parameters:
-        - $ref: '#/components/parameters/ModeQuery'
-        - $ref: '#/components/parameters/RunIdQuery'
+        - name: mode
+          in: query
+          required: false
+          description: Defaults to dry_run.
+          schema:
+            type: string
+            enum:
+              - dry_run
+              - execute
+            default: dry_run
+        - name: run_id
+          in: query
+          required: false
+          description: Stable identifier used for audit logs and traceability.
+          schema:
+            type: string
+            example: demo-20260426-s10
       responses:
-        '200':
+        "200":
           description: Default PRD parsed successfully
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PrdParseResponse'
+                $ref: "#/components/schemas/PrdParseResponse"
 
   /backlog/execute:
     post:
-      tags: [Backlog]
+      tags:
+        - Backlog
       operationId: executeBacklog
       summary: Preview or create Azure DevOps work items from a backlog bundle
       description: |
         Default to mode=dry_run. In dry_run this returns the exact Epic and Story payloads
         that would be sent to Azure DevOps. In execute mode, this creates real work items
-        only when x-approval-token matches the configured gateway approval token.
+        using the configured action authentication and approval token setup.
       parameters:
-        - $ref: '#/components/parameters/ModeQuery'
-        - $ref: '#/components/parameters/RunIdQuery'
-        - $ref: '#/components/parameters/ApprovalHeader'
+        - name: mode
+          in: query
+          required: false
+          description: Defaults to dry_run.
+          schema:
+            type: string
+            enum:
+              - dry_run
+              - execute
+            default: dry_run
+        - name: run_id
+          in: query
+          required: false
+          description: Stable identifier used for audit logs and traceability.
+          schema:
+            type: string
+            example: demo-20260426-s10
       requestBody:
         required: false
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/BacklogExecuteRequest'
-            examples:
-              explicitBacklog:
-                value:
-                  backlog:
-                    prd_id: prd-hospital-ops-demo
-                    title: Hospital Operations Dashboard - Nova 7
-                    requirements:
-                      - id: REQ-001
-                        title: Browse Hospitals And Care Units
-                        summary: Users can browse hospitals and care units.
-                        priority: medium
-                        source_refs:
-                          - section: Purpose
-                            excerpt: Browse hospitals and care units
-                    epics:
-                      - id: EPIC-001
-                        title: Browse Hospitals And Care Units
-                        summary: Users can browse hospitals and care units.
-                        requirement_ids: [REQ-001]
-                        source_refs:
-                          - section: Purpose
-                            excerpt: Browse hospitals and care units
-                    stories:
-                      - id: STORY-001
-                        epic_id: EPIC-001
-                        title: Browse Hospitals And Care Units
-                        summary: Users can browse hospitals and care units.
-                        requirement_ids: [REQ-001]
-                        acceptance_criteria:
-                          - id: AC-001-001
-                            story_id: STORY-001
-                            text: Browse Hospitals And Care Units is represented in the generated backlog output.
-                        source_refs:
-                          - section: Purpose
-                            excerpt: Browse hospitals and care units
-                    risks:
-                      - id: RISK-001
-                        title: External Dependencies May Delay Delivery
-                        severity: medium
-                        related_requirement_ids: [REQ-001]
-                        mitigation_note: External sandbox services may delay delivery.
-              parseDefaultFixture:
-                value:
-                  prdId: prd-golden
+              $ref: "#/components/schemas/BacklogExecuteRequest"
       responses:
-        '200':
+        "200":
           description: Preview or execute result
           content:
             application/json:
               schema:
                 oneOf:
-                  - $ref: '#/components/schemas/BacklogExecutePreviewResponse'
-                  - $ref: '#/components/schemas/BacklogExecuteSuccessResponse'
-        '400':
+                  - $ref: "#/components/schemas/BacklogExecutePreviewResponse"
+                  - $ref: "#/components/schemas/BacklogExecuteSuccessResponse"
+        "400":
           description: Backlog validation failed
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '403':
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
           description: Execute was attempted without a valid approval token
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: "#/components/schemas/ErrorResponse"
 
   /repos/pull-requests/{repoId}/{prId}/context:
     get:
-      tags: [Repos]
+      tags:
+        - Repos
       operationId: getPullRequestContext
       summary: Get pull request metadata and linked work items
       description: |
@@ -194,27 +204,54 @@ paths:
         title, description, status, branches, author, linked work items, and
         fallback AB# references parsed from the title and description.
       parameters:
-        - $ref: '#/components/parameters/RepoIdPath'
-        - $ref: '#/components/parameters/PrIdPath'
-        - $ref: '#/components/parameters/ModeQuery'
-        - $ref: '#/components/parameters/RunIdQuery'
+        - name: repoId
+          in: path
+          required: true
+          description: Azure DevOps repository identifier.
+          schema:
+            type: string
+        - name: prId
+          in: path
+          required: true
+          description: Azure DevOps pull request identifier.
+          schema:
+            type: integer
+            minimum: 1
+        - name: mode
+          in: query
+          required: false
+          description: Defaults to dry_run.
+          schema:
+            type: string
+            enum:
+              - dry_run
+              - execute
+            default: dry_run
+        - name: run_id
+          in: query
+          required: false
+          description: Stable identifier used for audit logs and traceability.
+          schema:
+            type: string
+            example: demo-20260426-s10
       responses:
-        '200':
+        "200":
           description: Pull request context retrieved successfully
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PullRequestContextRouteResponse'
-        '400':
+                $ref: "#/components/schemas/PullRequestContextRouteResponse"
+        "400":
           description: Invalid repoId or prId
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: "#/components/schemas/ErrorResponse"
 
   /repos/pull-requests/{repoId}/{prId}/changes:
     get:
-      tags: [Repos]
+      tags:
+        - Repos
       operationId: getPullRequestChanges
       summary: Get pull request changed files and compact change summaries
       description: |
@@ -222,74 +259,267 @@ paths:
         iteration. This is intentionally smaller than a raw diff so it remains
         safe for audit logging and easy for downstream review reasoning.
       parameters:
-        - $ref: '#/components/parameters/RepoIdPath'
-        - $ref: '#/components/parameters/PrIdPath'
-        - $ref: '#/components/parameters/ModeQuery'
-        - $ref: '#/components/parameters/RunIdQuery'
+        - name: repoId
+          in: path
+          required: true
+          description: Azure DevOps repository identifier.
+          schema:
+            type: string
+        - name: prId
+          in: path
+          required: true
+          description: Azure DevOps pull request identifier.
+          schema:
+            type: integer
+            minimum: 1
+        - name: mode
+          in: query
+          required: false
+          description: Defaults to dry_run.
+          schema:
+            type: string
+            enum:
+              - dry_run
+              - execute
+            default: dry_run
+        - name: run_id
+          in: query
+          required: false
+          description: Stable identifier used for audit logs and traceability.
+          schema:
+            type: string
+            example: demo-20260426-s10
       responses:
-        '200':
+        "200":
           description: Pull request changes retrieved successfully
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PullRequestChangesRouteResponse'
-        '400':
+                $ref: "#/components/schemas/PullRequestChangesRouteResponse"
+        "400":
           description: Invalid repoId or prId
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /repos/pull-requests/{repoId}/{prId}/review:
+    get:
+      tags:
+        - Repos
+      operationId: reviewPullRequest
+      summary: Generate an acceptance-criteria-grounded review draft
+      description: |
+        Uses PR context, linked work items, acceptance criteria, and compact
+        PR changes to generate a deterministic review draft.
+      parameters:
+        - name: repoId
+          in: path
+          required: true
+          description: Azure DevOps repository identifier.
+          schema:
+            type: string
+        - name: prId
+          in: path
+          required: true
+          description: Azure DevOps pull request identifier.
+          schema:
+            type: integer
+            minimum: 1
+        - name: mode
+          in: query
+          required: false
+          description: Defaults to dry_run.
+          schema:
+            type: string
+            enum:
+              - dry_run
+              - execute
+            default: dry_run
+        - name: run_id
+          in: query
+          required: false
+          description: Stable identifier used for audit logs and traceability.
+          schema:
+            type: string
+            example: demo-20260426-s10
+      responses:
+        "200":
+          description: Pull request review generated successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PullRequestReviewRouteResponse"
+        "400":
+          description: Invalid repoId or prId
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /repos/pull-requests/{repoId}/{prId}/comment:
+    post:
+      tags:
+        - Repos
+      operationId: postPullRequestComment
+      summary: Preview or post a pull request summary review thread
+      description: |
+        In dry_run, returns the exact comment body that would be posted.
+        In execute mode, posts one summary thread to the selected pull request.
+        Duplicate posting is prevented per run_id.
+      parameters:
+        - name: repoId
+          in: path
+          required: true
+          description: Azure DevOps repository identifier.
+          schema:
+            type: string
+        - name: prId
+          in: path
+          required: true
+          description: Azure DevOps pull request identifier.
+          schema:
+            type: integer
+            minimum: 1
+        - name: mode
+          in: query
+          required: false
+          description: Defaults to dry_run.
+          schema:
+            type: string
+            enum:
+              - dry_run
+              - execute
+            default: dry_run
+        - name: run_id
+          in: query
+          required: false
+          description: Stable identifier used for audit logs, PR comments, and traceability.
+          schema:
+            type: string
+            example: demo-20260426-s10
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PullRequestCommentRequest"
+      responses:
+        "200":
+          description: Preview or execute result
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: "#/components/schemas/PullRequestCommentPreviewRouteResponse"
+                  - $ref: "#/components/schemas/PullRequestCommentExecuteRouteResponse"
+        "400":
+          description: Invalid repoId, prId, or request body
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Execute was attempted without a valid approval token
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /traceability/{prdId}:
+    get:
+      tags:
+        - Traceability
+      operationId: getTraceability
+      summary: Return release notes and traceability rows for a PRD
+      description: |
+        Returns release-note items and requirement-to-release-note traceability rows
+        for the chosen PRD and PR. If the linked work item is not present in the
+        backlog mapping store, storyId and adoWorkItemId can be supplied to perform
+        a manual join for demo purposes.
+      parameters:
+        - name: prdId
+          in: path
+          required: true
+          description: Stable PRD identifier.
+          schema:
+            type: string
+        - name: repoId
+          in: query
+          required: true
+          description: Azure DevOps repository identifier.
+          schema:
+            type: string
+        - name: prId
+          in: query
+          required: true
+          description: Azure DevOps pull request identifier.
+          schema:
+            type: integer
+            minimum: 1
+        - name: threadId
+          in: query
+          required: false
+          description: Optional explicit PR thread id. If omitted, the gateway looks up the thread by run_id.
+          schema:
+            type: integer
+            minimum: 1
+        - name: storyId
+          in: query
+          required: false
+          description: Optional manual join story id used when linked work items are not in the mapping store.
+          schema:
+            type: string
+            example: STORY-001
+        - name: adoWorkItemId
+          in: query
+          required: false
+          description: Optional manual join Azure DevOps work item id used with storyId.
+          schema:
+            type: integer
+            minimum: 1
+            example: 248
+        - name: mode
+          in: query
+          required: false
+          description: Defaults to dry_run.
+          schema:
+            type: string
+            enum:
+              - dry_run
+              - execute
+            default: dry_run
+        - name: run_id
+          in: query
+          required: false
+          description: Stable identifier used for audit logs and traceability.
+          schema:
+            type: string
+            example: demo-20260426-s10
+      responses:
+        "200":
+          description: Traceability returned successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TraceabilityRouteResponse"
+        "400":
+          description: Invalid request or no traceability rows found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
 
 components:
-  parameters:
-    ModeQuery:
-      name: mode
-      in: query
-      required: false
-      description: Defaults to dry_run. Use execute only after a human explicitly approves the write.
-      schema:
-        type: string
-        enum: [dry_run, execute]
-        default: dry_run
-
-    RunIdQuery:
-      name: run_id
-      in: query
-      required: false
-      description: Stable identifier used for audit logs, created work items, and traceability rows.
-      schema:
-        type: string
-        example: demo-20260412-s6
-
-    ApprovalHeader:
-      name: x-approval-token
-      in: header
-      required: false
-      description: Required only for execute writes.
-      schema:
-        type: string
-
-    RepoIdPath:
-      name: repoId
-      in: path
-      required: true
-      description: Azure DevOps repository identifier.
-      schema:
-        type: string
-
-    PrIdPath:
-      name: prId
-      in: path
-      required: true
-      description: Azure DevOps pull request identifier.
-      schema:
-        type: integer
-        minimum: 1
-
   schemas:
     HealthResponse:
       type: object
-      required: [status, environment, message]
+      required:
+        - status
+        - environment
+        - demoMode
+        - liveApisEnabled
+        - message
       properties:
         status:
           type: string
@@ -297,13 +527,21 @@ components:
         environment:
           type: string
           example: production
+        demoMode:
+          type: boolean
+          example: false
+        liveApisEnabled:
+          type: boolean
+          example: true
         message:
           type: string
           example: Spec-to-Ship gateway is running
 
     SourceReference:
       type: object
-      required: [section, excerpt]
+      required:
+        - section
+        - excerpt
       properties:
         section:
           type: string
@@ -312,7 +550,12 @@ components:
 
     Requirement:
       type: object
-      required: [id, title, summary, priority, source_refs]
+      required:
+        - id
+        - title
+        - summary
+        - priority
+        - source_refs
       properties:
         id:
           type: string
@@ -322,15 +565,23 @@ components:
           type: string
         priority:
           type: string
-          enum: [high, medium, low]
+          enum:
+            - high
+            - medium
+            - low
         source_refs:
           type: array
           items:
-            $ref: '#/components/schemas/SourceReference'
+            $ref: "#/components/schemas/SourceReference"
 
     Epic:
       type: object
-      required: [id, title, summary, requirement_ids, source_refs]
+      required:
+        - id
+        - title
+        - summary
+        - requirement_ids
+        - source_refs
       properties:
         id:
           type: string
@@ -345,11 +596,14 @@ components:
         source_refs:
           type: array
           items:
-            $ref: '#/components/schemas/SourceReference'
+            $ref: "#/components/schemas/SourceReference"
 
     AcceptanceCriterion:
       type: object
-      required: [id, story_id, text]
+      required:
+        - id
+        - story_id
+        - text
       properties:
         id:
           type: string
@@ -360,7 +614,14 @@ components:
 
     Story:
       type: object
-      required: [id, epic_id, title, summary, requirement_ids, acceptance_criteria, source_refs]
+      required:
+        - id
+        - epic_id
+        - title
+        - summary
+        - requirement_ids
+        - acceptance_criteria
+        - source_refs
       properties:
         id:
           type: string
@@ -377,15 +638,20 @@ components:
         acceptance_criteria:
           type: array
           items:
-            $ref: '#/components/schemas/AcceptanceCriterion'
+            $ref: "#/components/schemas/AcceptanceCriterion"
         source_refs:
           type: array
           items:
-            $ref: '#/components/schemas/SourceReference'
+            $ref: "#/components/schemas/SourceReference"
 
     Risk:
       type: object
-      required: [id, title, severity, related_requirement_ids, mitigation_note]
+      required:
+        - id
+        - title
+        - severity
+        - related_requirement_ids
+        - mitigation_note
       properties:
         id:
           type: string
@@ -393,7 +659,10 @@ components:
           type: string
         severity:
           type: string
-          enum: [high, medium, low]
+          enum:
+            - high
+            - medium
+            - low
         related_requirement_ids:
           type: array
           items:
@@ -403,7 +672,13 @@ components:
 
     BacklogBundle:
       type: object
-      required: [prd_id, title, requirements, epics, stories, risks]
+      required:
+        - prd_id
+        - title
+        - requirements
+        - epics
+        - stories
+        - risks
       properties:
         prd_id:
           type: string
@@ -412,23 +687,25 @@ components:
         requirements:
           type: array
           items:
-            $ref: '#/components/schemas/Requirement'
+            $ref: "#/components/schemas/Requirement"
         epics:
           type: array
           items:
-            $ref: '#/components/schemas/Epic'
+            $ref: "#/components/schemas/Epic"
         stories:
           type: array
           items:
-            $ref: '#/components/schemas/Story'
+            $ref: "#/components/schemas/Story"
         risks:
           type: array
           items:
-            $ref: '#/components/schemas/Risk'
+            $ref: "#/components/schemas/Risk"
 
     ValidationResult:
       type: object
-      required: [ok, errors]
+      required:
+        - ok
+        - errors
       properties:
         ok:
           type: boolean
@@ -443,23 +720,25 @@ components:
       properties:
         prdId:
           type: string
-          description: Optional stable PRD identifier.
         prdText:
           type: string
-          description: Raw PRD markdown or plaintext. If omitted, the gateway uses the configured default PRD fixture.
 
     PrdParseResponse:
       type: object
-      required: [ok, prd_id, backlog, validation]
+      required:
+        - ok
+        - prd_id
+        - backlog
+        - validation
       properties:
         ok:
           type: boolean
         prd_id:
           type: string
         backlog:
-          $ref: '#/components/schemas/BacklogBundle'
+          $ref: "#/components/schemas/BacklogBundle"
         validation:
-          $ref: '#/components/schemas/ValidationResult'
+          $ref: "#/components/schemas/ValidationResult"
 
     BacklogExecuteRequest:
       type: object
@@ -467,13 +746,14 @@ components:
       properties:
         prdId:
           type: string
-          description: Optional PRD id when using the default configured PRD fixture.
         backlog:
-          $ref: '#/components/schemas/BacklogBundle'
+          $ref: "#/components/schemas/BacklogBundle"
 
     WorkItemPayload:
       type: object
-      required: [title, description]
+      required:
+        - title
+        - description
       properties:
         title:
           type: string
@@ -488,18 +768,25 @@ components:
 
     BacklogPreviewEpic:
       type: object
-      required: [local_id, work_item_type, payload]
+      required:
+        - local_id
+        - work_item_type
+        - payload
       properties:
         local_id:
           type: string
         work_item_type:
           type: string
         payload:
-          $ref: '#/components/schemas/WorkItemPayload'
+          $ref: "#/components/schemas/WorkItemPayload"
 
     BacklogPreviewStory:
       type: object
-      required: [local_id, parent_local_id, work_item_type, payload]
+      required:
+        - local_id
+        - parent_local_id
+        - work_item_type
+        - payload
       properties:
         local_id:
           type: string
@@ -508,11 +795,16 @@ components:
         work_item_type:
           type: string
         payload:
-          $ref: '#/components/schemas/WorkItemPayload'
+          $ref: "#/components/schemas/WorkItemPayload"
 
     BacklogExecutePreviewResponse:
       type: object
-      required: [ok, mode, outcome, action, preview]
+      required:
+        - ok
+        - mode
+        - outcome
+        - action
+        - preview
       properties:
         ok:
           type: boolean
@@ -528,7 +820,14 @@ components:
           const: backlog_execute
         preview:
           type: object
-          required: [project, prd_id, backlog_title, epic_count, story_count, epics, stories]
+          required:
+            - project
+            - prd_id
+            - backlog_title
+            - epic_count
+            - story_count
+            - epics
+            - stories
           properties:
             project:
               type: string
@@ -543,15 +842,20 @@ components:
             epics:
               type: array
               items:
-                $ref: '#/components/schemas/BacklogPreviewEpic'
+                $ref: "#/components/schemas/BacklogPreviewEpic"
             stories:
               type: array
               items:
-                $ref: '#/components/schemas/BacklogPreviewStory'
+                $ref: "#/components/schemas/BacklogPreviewStory"
 
     BacklogMappingRecord:
       type: object
-      required: [run_id, local_id, work_item_type, ado_work_item_id, ado_url]
+      required:
+        - run_id
+        - local_id
+        - work_item_type
+        - ado_work_item_id
+        - ado_url
       properties:
         run_id:
           type: string
@@ -572,7 +876,12 @@ components:
 
     BacklogExecuteSuccessResponse:
       type: object
-      required: [ok, mode, outcome, action, result]
+      required:
+        - ok
+        - mode
+        - outcome
+        - action
+        - result
       properties:
         ok:
           type: boolean
@@ -588,7 +897,14 @@ components:
           const: backlog_execute
         result:
           type: object
-          required: [project, prd_id, backlog_title, epic_count, story_count, created_items, mapping_path]
+          required:
+            - project
+            - prd_id
+            - backlog_title
+            - epic_count
+            - story_count
+            - created_items
+            - mapping_path
           properties:
             project:
               type: string
@@ -603,13 +919,14 @@ components:
             created_items:
               type: array
               items:
-                $ref: '#/components/schemas/BacklogMappingRecord'
+                $ref: "#/components/schemas/BacklogMappingRecord"
             mapping_path:
               type: string
 
     PullRequestLinkedWorkItem:
       type: object
-      required: [id]
+      required:
+        - id
       properties:
         id:
           type: integer
@@ -628,7 +945,14 @@ components:
 
     PullRequestContextResponse:
       type: object
-      required: [repoId, prId, title, description, status, workItems, abReferences]
+      required:
+        - repoId
+        - prId
+        - title
+        - description
+        - status
+        - workItems
+        - abReferences
       properties:
         repoId:
           type: string
@@ -645,11 +969,11 @@ components:
         targetRefName:
           type: string
         createdBy:
-          $ref: '#/components/schemas/PullRequestAuthor'
+          $ref: "#/components/schemas/PullRequestAuthor"
         workItems:
           type: array
           items:
-            $ref: '#/components/schemas/PullRequestLinkedWorkItem'
+            $ref: "#/components/schemas/PullRequestLinkedWorkItem"
         abReferences:
           type: array
           items:
@@ -657,14 +981,21 @@ components:
 
     PullRequestContextRouteResponse:
       type: object
-      required: [ok, mode, outcome, action, result]
+      required:
+        - ok
+        - mode
+        - outcome
+        - action
+        - result
       properties:
         ok:
           type: boolean
           const: true
         mode:
           type: string
-          enum: [dry_run, execute]
+          enum:
+            - dry_run
+            - execute
         outcome:
           type: string
           const: success
@@ -672,11 +1003,14 @@ components:
           type: string
           const: pr_context
         result:
-          $ref: '#/components/schemas/PullRequestContextResponse'
+          $ref: "#/components/schemas/PullRequestContextResponse"
 
     PullRequestFileChangeSummary:
       type: object
-      required: [path, changeType, summary]
+      required:
+        - path
+        - changeType
+        - summary
       properties:
         path:
           type: string
@@ -693,7 +1027,13 @@ components:
 
     PullRequestChangesResponse:
       type: object
-      required: [repoId, prId, fileCount, returnedFileCount, truncated, files]
+      required:
+        - repoId
+        - prId
+        - fileCount
+        - returnedFileCount
+        - truncated
+        - files
       properties:
         repoId:
           type: string
@@ -710,18 +1050,25 @@ components:
         files:
           type: array
           items:
-            $ref: '#/components/schemas/PullRequestFileChangeSummary'
+            $ref: "#/components/schemas/PullRequestFileChangeSummary"
 
     PullRequestChangesRouteResponse:
       type: object
-      required: [ok, mode, outcome, action, result]
+      required:
+        - ok
+        - mode
+        - outcome
+        - action
+        - result
       properties:
         ok:
           type: boolean
           const: true
         mode:
           type: string
-          enum: [dry_run, execute]
+          enum:
+            - dry_run
+            - execute
         outcome:
           type: string
           const: success
@@ -729,22 +1076,386 @@ components:
           type: string
           const: pr_changes
         result:
-          $ref: '#/components/schemas/PullRequestChangesResponse'
+          $ref: "#/components/schemas/PullRequestChangesResponse"
+
+    ReviewFinding:
+      type: object
+      required:
+        - type
+        - message
+      properties:
+        type:
+          type: string
+          enum:
+            - strength
+            - gap
+            - scope_creep
+            - follow_up
+        message:
+          type: string
+
+    ReviewCriterionAssessment:
+      type: object
+      required:
+        - criterionId
+        - workItemId
+        - workItemTitle
+        - requirementIds
+        - criterion
+        - status
+        - evidence
+        - note
+      properties:
+        criterionId:
+          type: string
+        workItemId:
+          type: integer
+        workItemTitle:
+          type: string
+        requirementIds:
+          type: array
+          items:
+            type: string
+        criterion:
+          type: string
+        status:
+          type: string
+          enum:
+            - met
+            - partial
+            - not_evident
+        evidence:
+          type: array
+          items:
+            type: string
+        note:
+          type: string
+
+    PullRequestReviewDraft:
+      type: object
+      required:
+        - repoId
+        - prId
+        - summary
+        - linkedWorkItemIds
+        - requirementIds
+        - checklist
+        - findings
+        - possibleScopeCreep
+        - followUps
+      properties:
+        repoId:
+          type: string
+        prId:
+          type: integer
+        summary:
+          type: string
+        linkedWorkItemIds:
+          type: array
+          items:
+            type: integer
+        requirementIds:
+          type: array
+          items:
+            type: string
+        checklist:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReviewCriterionAssessment"
+        findings:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReviewFinding"
+        possibleScopeCreep:
+          type: array
+          items:
+            type: string
+        followUps:
+          type: array
+          items:
+            type: string
+
+    PullRequestReviewRouteResponse:
+      type: object
+      required:
+        - ok
+        - mode
+        - outcome
+        - action
+        - result
+      properties:
+        ok:
+          type: boolean
+          const: true
+        mode:
+          type: string
+          enum:
+            - dry_run
+            - execute
+        outcome:
+          type: string
+          const: success
+        action:
+          type: string
+          const: pr_review
+        result:
+          $ref: "#/components/schemas/PullRequestReviewDraft"
+
+    PullRequestCommentRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - review
+      properties:
+        review:
+          $ref: "#/components/schemas/PullRequestReviewDraft"
+
+    PullRequestCommentPreviewResult:
+      type: object
+      required:
+        - repoId
+        - prId
+        - runId
+        - commentBody
+      properties:
+        repoId:
+          type: string
+        prId:
+          type: integer
+        runId:
+          type: string
+        commentBody:
+          type: string
+
+    PullRequestCommentPreviewRouteResponse:
+      type: object
+      required:
+        - ok
+        - mode
+        - outcome
+        - action
+        - result
+      properties:
+        ok:
+          type: boolean
+          const: true
+        mode:
+          type: string
+          const: dry_run
+        outcome:
+          type: string
+          const: preview
+        action:
+          type: string
+          const: pr_comment
+        result:
+          $ref: "#/components/schemas/PullRequestCommentPreviewResult"
+
+    PullRequestCommentExecuteResult:
+      type: object
+      required:
+        - repoId
+        - prId
+        - runId
+        - threadId
+        - url
+        - duplicatePrevented
+      properties:
+        repoId:
+          type: string
+        prId:
+          type: integer
+        runId:
+          type: string
+        threadId:
+          type: integer
+        url:
+          type: string
+        duplicatePrevented:
+          type: boolean
+
+    PullRequestCommentExecuteRouteResponse:
+      type: object
+      required:
+        - ok
+        - mode
+        - outcome
+        - action
+        - result
+      properties:
+        ok:
+          type: boolean
+          const: true
+        mode:
+          type: string
+          const: execute
+        outcome:
+          type: string
+          const: success
+        action:
+          type: string
+          const: pr_comment
+        result:
+          $ref: "#/components/schemas/PullRequestCommentExecuteResult"
+
+    ReleaseNoteItem:
+      type: object
+      required:
+        - id
+        - requirementId
+        - title
+        - summary
+      properties:
+        id:
+          type: string
+        requirementId:
+          type: string
+        title:
+          type: string
+        summary:
+          type: string
+
+    ReleaseNotesDraft:
+      type: object
+      required:
+        - prdId
+        - repoId
+        - prId
+        - customerFacing
+        - internalFacing
+      properties:
+        prdId:
+          type: string
+        repoId:
+          type: string
+        prId:
+          type: integer
+        customerFacing:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReleaseNoteItem"
+        internalFacing:
+          type: array
+          items:
+            $ref: "#/components/schemas/ReleaseNoteItem"
+
+    TraceabilityRow:
+      type: object
+      required:
+        - requirement_id
+        - requirement_title
+        - story_id
+        - ado_work_item_id
+        - ado_url
+        - pr_id
+        - pr_url
+        - pr_thread_id
+        - pr_thread_url
+        - release_note_item_id
+        - run_id
+      properties:
+        requirement_id:
+          type: string
+        requirement_title:
+          type: string
+        story_id:
+          type: string
+        ado_work_item_id:
+          type: integer
+        ado_url:
+          type: string
+        pr_id:
+          type: integer
+        pr_url:
+          type: string
+        pr_thread_id:
+          type: integer
+        pr_thread_url:
+          type: string
+        release_note_item_id:
+          type: string
+        run_id:
+          type: string
+
+    TraceabilityResponse:
+      type: object
+      required:
+        - prdId
+        - title
+        - repoId
+        - prId
+        - prThreadId
+        - runId
+        - releaseNotes
+        - rows
+      properties:
+        prdId:
+          type: string
+        title:
+          type: string
+        repoId:
+          type: string
+        prId:
+          type: integer
+        prThreadId:
+          type: integer
+        runId:
+          type: string
+        releaseNotes:
+          $ref: "#/components/schemas/ReleaseNotesDraft"
+        rows:
+          type: array
+          items:
+            $ref: "#/components/schemas/TraceabilityRow"
+
+    TraceabilityRouteResponse:
+      type: object
+      required:
+        - ok
+        - mode
+        - outcome
+        - action
+        - result
+      properties:
+        ok:
+          type: boolean
+          const: true
+        mode:
+          type: string
+          enum:
+            - dry_run
+            - execute
+        outcome:
+          type: string
+          const: success
+        action:
+          type: string
+          const: traceability
+        result:
+          $ref: "#/components/schemas/TraceabilityResponse"
 
     ErrorResponse:
       type: object
-      required: [ok, mode, outcome, error]
+      required:
+        - ok
+        - mode
+        - outcome
+        - error
       properties:
         ok:
           type: boolean
           const: false
         mode:
           type: string
-          enum: [dry_run, execute]
+          enum:
+            - dry_run
+            - execute
         outcome:
           type: string
-          enum: [blocked, error]
+          enum:
+            - blocked
+            - error
         error:
           type: string
         validation:
-          $ref: '#/components/schemas/ValidationResult'
+          $ref: "#/components/schemas/ValidationResult"
