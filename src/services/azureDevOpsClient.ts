@@ -439,6 +439,12 @@ export class AzureDevOpsClient {
     return (await response.json()) as AzureDevOpsPullRequestThread;
   }
 
+  buildPullRequestUrl(repoId: string, prId: number): string {
+    return `${this.orgUrl}/${this.project}/_git/${encodeURIComponent(
+      repoId
+    )}/pullrequest/${prId}`;
+  }
+
   buildPullRequestThreadUrl(repoId: string, prId: number, threadId: number): string {
     return `${this.orgUrl}/${this.project}/_git/${encodeURIComponent(
       repoId
