@@ -18,11 +18,12 @@ export async function apiFetch<T>(path: string, init?: RequestInit): Promise<T> 
     cache: "no-store"
   });
 
-  const payload = (await response.json().catch(() => null)) as T & { error?: string };
+  const text = await response.text();
+  const payload = text ? (JSON.parse(text) as T & { error?: string }) : null;
 
   if (!response.ok) {
     throw new Error(payload?.error || `Request failed with status ${response.status}.`);
   }
 
-  return payload;
+  return payload as T;
 }

@@ -18,6 +18,9 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
                 Spec-to-Ship
               </Link>
               <nav className="flex gap-4 text-sm font-medium text-slate-600">
+                <Link href="/" className="hover:text-slate-950">
+                  Dashboard
+                </Link>
                 <Link href="/workspace" className="hover:text-slate-950">
                   Workspace
                 </Link>
