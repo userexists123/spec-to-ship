@@ -4,6 +4,12 @@ WORKDIR /app
 
 COPY package*.json ./
 
+RUN npm config set fetch-retries 5 \
+  && npm config set fetch-retry-factor 2 \
+  && npm config set fetch-retry-mintimeout 20000 \
+  && npm config set fetch-retry-maxtimeout 120000 \
+  && npm ci
+
 RUN apt-get update \
   && apt-get install -y curl gnupg ca-certificates libicu72 \
   && curl https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor > /usr/share/keyrings/microsoft-prod.gpg \
@@ -14,7 +20,6 @@ RUN apt-get update \
 
 COPY . .
 
-RUN npm install
 RUN npm run build
 
 ENV FUNCTIONS_WORKER_RUNTIME=node
