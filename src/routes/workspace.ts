@@ -2,6 +2,7 @@ import { app, HttpRequest, HttpResponseInit, InvocationContext } from "@azure/fu
 import { emptyResponse, jsonResponse, readJsonObject } from "../services/http";
 import {
   getWorkspaceSettings,
+  listRecentPrs,
   parseWorkspaceSettings,
   upsertWorkspaceSettings
 } from "../services/workspaceStore";
@@ -17,13 +18,25 @@ export async function workspaceRoute(
   try {
     if (request.method === "GET") {
       const workspace = await getWorkspaceSettings();
-      return jsonResponse(200, { ok: true, workspace });
+      const recentPrs = await listRecentPrs(5);
+
+      return jsonResponse(200, {
+        ok: true,
+        workspace,
+        recentPrs
+      });
     }
 
     if (request.method === "PUT") {
       const body = await readJsonObject(request);
       const saved = await upsertWorkspaceSettings(parseWorkspaceSettings(body));
-      return jsonResponse(200, { ok: true, workspace: saved });
+      const recentPrs = await listRecentPrs(5);
+
+      return jsonResponse(200, {
+        ok: true,
+        workspace: saved,
+        recentPrs
+      });
     }
 
     return jsonResponse(405, { ok: false, error: "Method not allowed." });
