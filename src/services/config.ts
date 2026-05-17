@@ -16,6 +16,16 @@ function parseBoolean(value: string): boolean {
   return ["1", "true", "yes", "on"].includes(value.toLowerCase());
 }
 
+function parseBooleanEnv(defaultValue: boolean, ...names: string[]): boolean {
+  const value = readFirstDefinedEnv(...names);
+
+  if (!value) {
+    return defaultValue;
+  }
+
+  return parseBoolean(value);
+}
+
 function resolveAuditLogPath(): string {
   const explicitPath = readFirstDefinedEnv("AUDIT_LOG_PATH", "STS_AUDIT_LOG_PATH");
 
@@ -55,6 +65,9 @@ export function getAppConfig() {
       readFirstDefinedEnv("AZDO_PROJECT", "AZURE_DEVOPS_PROJECT", "ADO_PROJECT") ||
       "Spec to Ship Sandbox",
     azdoPat: readFirstDefinedEnv("AZDO_PAT", "AZURE_DEVOPS_PAT", "ADO_PAT"),
+    databaseUrl: readFirstDefinedEnv("DATABASE_URL", "POSTGRES_URL", "SUPABASE_DB_URL"),
+    databaseSsl: parseBooleanEnv(true, "DATABASE_SSL", "PGSSLMODE_SSL"),
+    corsOrigin: readFirstDefinedEnv("CORS_ORIGIN", "WEB_ORIGIN", "FRONTEND_ORIGIN") || "*",
     executeApprovalToken:
       readFirstDefinedEnv(
         "EXECUTE_APPROVAL_TOKEN",

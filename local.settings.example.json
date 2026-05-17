@@ -10,6 +10,11 @@
     "AUDIT_LOG_PATH": "./data/audit.jsonl",
     "DEFAULT_PRD_PATH": "./samples/prd-golden.md",
     "BACKLOG_MAPPING_PATH": "./data/backlog-mappings.json",
-    "AZDO_STORY_WORK_ITEM_TYPE": "User Story"
+    "AZDO_STORY_WORK_ITEM_TYPE": "Issue",
+    "DATABASE_URL": "postgresql://postgres:password@db.project-ref.supabase.co:5432/postgres",
+    "DATABASE_SSL": "true",
+    "CORS_ORIGIN": "https://your-vercel-app.vercel.app",
+    "DEMO_MODE": "false",
+    "AZDO_EPIC_WORK_ITEM_TYPE": "Epic"
   }
 }

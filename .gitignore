@@ -1,6 +1,38 @@
+# Dependencies
 node_modules/
+web/node_modules/
+
+# Next.js / Vercel frontend build output
+web/.next/
+web/out/
+web/.vercel/
+
+# Backend build output
 dist/
-data/
-local.settings.json
+build/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Env files
 .env
 .env.*
+!.env.example
+web/.env
+web/.env.*
+!web/.env.example
+local.settings.json
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Runtime/local data
+data/*.jsonl
+data/*.json

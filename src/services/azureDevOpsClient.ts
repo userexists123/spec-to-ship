@@ -18,6 +18,18 @@ export interface CreateWorkItemResult {
   url: string;
 }
 
+export interface AzureDevOpsRepository {
+  id: string;
+  name: string;
+  url?: string;
+  webUrl?: string;
+  defaultBranch?: string;
+  project?: {
+    id?: string;
+    name?: string;
+  };
+}
+
 export interface AzureDevOpsPullRequest {
   pullRequestId: number;
   title?: string;
@@ -124,14 +136,6 @@ function toJsonPatchOperations(fields: Record<string, unknown>): JsonPatchOperat
   }));
 }
 
-function normalizeStoryType(value: string): string {
-  if (value === "Issue") {
-    return "User Story";
-  }
-
-  return value;
-}
-
 export class AzureDevOpsClient {
   private readonly orgUrl: string;
 
@@ -145,11 +149,11 @@ export class AzureDevOpsClient {
 
   private readonly demoMode: boolean;
 
-  constructor() {
+  constructor(overrides: { orgUrl?: string; project?: string } = {}) {
     const config = getAppConfig();
 
-    this.orgUrl = config.azdoOrgUrl.replace(/\/$/, "");
-    this.project = config.azdoProject;
+    this.orgUrl = (overrides.orgUrl || config.azdoOrgUrl).replace(/\/$/, "");
+    this.project = overrides.project || config.azdoProject;
     this.pat = config.azdoPat;
     this.epicWorkItemType = config.epicWorkItemType || "Epic";
     this.storyWorkItemType = config.storyWorkItemType || "Issue";
@@ -172,6 +176,21 @@ export class AzureDevOpsClient {
 
   getProject(): string {
     return this.project;
+  }
+
+  async listRepositories(): Promise<AzureDevOpsRepository[]> {
+    if (this.demoMode) {
+      throw new Error("Live repository loading is disabled while DEMO_MODE is enabled.");
+    }
+
+    const url = new URL(`${this.orgUrl}/${this.project}/_apis/git/repositories`);
+    url.searchParams.set("api-version", "7.1");
+
+    const response = await this.requestJson<AzureDevOpsListResponse<AzureDevOpsRepository>>(
+      url.toString()
+    );
+
+    return response.value;
   }
 
   buildBacklogPreview(bundle: BacklogBundle, runId: string): BacklogExecutePreview {
@@ -221,7 +240,7 @@ export class AzureDevOpsClient {
       }
 
       return {
-        type: normalizeStoryType(this.storyWorkItemType),
+        type: this.storyWorkItemType,
         title: story.title,
         description,
         localId: story.id,

@@ -14,7 +14,7 @@ RUN apt-get update \
 
 COPY . .
 
-RUN npm ci
+RUN npm install
 RUN npm run build
 
 ENV FUNCTIONS_WORKER_RUNTIME=node

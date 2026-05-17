@@ -9,10 +9,14 @@
     "check": "tsc --noEmit"
   },
   "dependencies": {
-    "@azure/functions": "^4.0.0"
+    "@azure/functions": "^4.0.0",
+    "drizzle-orm": "^0.44.7",
+    "knex": "^3.2.10",
+    "pg": "^8.16.3"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",
+    "@types/pg": "^8.15.6",
     "typescript": "^5.0.0"
   }
 }
