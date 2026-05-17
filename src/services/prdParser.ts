@@ -15,8 +15,20 @@ const KNOWN_COLON_HEADERS = new Set([
   "title",
   "project title",
   "project charter",
+  "overview",
+  "background",
+  "problem",
   "purpose",
+  "goals",
+  "objectives",
   "scope",
+  "requirements",
+  "functional requirements",
+  "non functional requirements",
+  "non-functional requirements",
+  "acceptance criteria",
+  "user stories",
+  "features",
   "prototype goals",
   "risks and assumptions",
   "risks",
@@ -24,6 +36,20 @@ const KNOWN_COLON_HEADERS = new Set([
   "dependencies",
   "frontend"
 ]);
+
+const REQUIREMENT_SECTIONS = [
+  "Requirements",
+  "Functional Requirements",
+  "Non-Functional Requirements",
+  "Goals",
+  "Objectives",
+  "Scope",
+  "Prototype Goals",
+  "Features",
+  "User Stories"
+];
+
+const CONTEXT_SECTIONS = ["Problem", "Purpose", "Overview", "Background", "Frontend"];
 
 function normalizeLine(value: string): string {
   return value.replace(/\s+/g, " ").trim();
@@ -40,12 +66,56 @@ function canonicalSectionName(value: string): string {
     return "Project Charter";
   }
 
+  if (normalized === "overview") {
+    return "Overview";
+  }
+
+  if (normalized === "background") {
+    return "Background";
+  }
+
+  if (normalized === "problem") {
+    return "Problem";
+  }
+
   if (normalized === "purpose") {
     return "Purpose";
   }
 
+  if (normalized === "goals") {
+    return "Goals";
+  }
+
+  if (normalized === "objectives") {
+    return "Objectives";
+  }
+
   if (normalized === "scope") {
     return "Scope";
+  }
+
+  if (normalized === "requirements") {
+    return "Requirements";
+  }
+
+  if (normalized === "functional requirements") {
+    return "Functional Requirements";
+  }
+
+  if (normalized === "non functional requirements" || normalized === "non-functional requirements") {
+    return "Non-Functional Requirements";
+  }
+
+  if (normalized === "acceptance criteria") {
+    return "Acceptance Criteria";
+  }
+
+  if (normalized === "user stories") {
+    return "User Stories";
+  }
+
+  if (normalized === "features") {
+    return "Features";
   }
 
   if (normalized === "prototype goals") {
@@ -79,10 +149,18 @@ function parseSections(prdText: string): SectionMap {
       continue;
     }
 
-    const markdownHeaderMatch = line.match(/^##\s+(.+)$/);
+    const markdownHeaderMatch = line.match(/^(#{1,6})\s+(.+)$/);
     if (markdownHeaderMatch) {
-      const headerText = normalizeLine(markdownHeaderMatch[1]);
+      const level = markdownHeaderMatch[1].length;
+      const headerText = normalizeLine(markdownHeaderMatch[2]);
       const inlineTitleMatch = headerText.match(/^([^:]+):\s*(.+)$/);
+
+      if (level === 1 && !inlineTitleMatch) {
+        currentSection = "Project Title";
+        sections[currentSection] ??= [];
+        sections[currentSection].push(headerText);
+        continue;
+      }
 
       if (inlineTitleMatch) {
         const headerName = normalizeLine(inlineTitleMatch[1]);
@@ -133,11 +211,11 @@ function getSection(sections: SectionMap, name: string): string[] {
 }
 
 function stripBulletPrefix(value: string): string {
-  return value.replace(/^[-*]\s+/, "").trim();
+  return value.replace(/^[-*]\s+/, "").replace(/^\d+[.)]\s+/, "").trim();
 }
 
 function isListItem(line: string): boolean {
-  return /^[-*]\s+/.test(line);
+  return /^[-*]\s+/.test(line) || /^\d+[.)]\s+/.test(line);
 }
 
 function dedupe(values: string[]): string[] {
@@ -184,29 +262,50 @@ function findSourceRefs(section: string, lines: string[], terms: string[]): Sour
   return refs;
 }
 
-function extractPurposeItems(sections: SectionMap): string[] {
-  const purpose = getSection(sections, "Purpose");
-  const scope = getSection(sections, "Scope");
+function extractRequirementItemsFromSectionLines(lines: string[]): string[] {
+  const listItems = lines.filter(isListItem).map(stripBulletPrefix);
 
-  const purposeListItems = purpose.filter(isListItem).map(stripBulletPrefix);
-  if (purposeListItems.length > 0) {
-    return dedupe(purposeListItems);
+  if (listItems.length > 0) {
+    return listItems;
   }
 
-  const scopeListItems = scope.filter(isListItem).map(stripBulletPrefix);
-
-  const purposeNonHeaderLines = purpose
-    .filter((line) => !isListItem(line))
+  return lines
     .filter((line) => !line.endsWith(":"))
-    .map(stripBulletPrefix);
+    .map(stripBulletPrefix)
+    .filter((line) => {
+      const lower = line.toLowerCase();
 
-  const combined = [...purposeNonHeaderLines, ...scopeListItems];
+      return (
+        lower.includes(" must ") ||
+        lower.startsWith("must ") ||
+        lower.includes(" should ") ||
+        lower.startsWith("should ") ||
+        lower.includes(" need ") ||
+        lower.includes(" needs ") ||
+        lower.includes(" required") ||
+        lower.includes(" requirement") ||
+        lower.startsWith("the system ") ||
+        lower.startsWith("the workspace ") ||
+        lower.startsWith("users ") ||
+        lower.startsWith("the pm ") ||
+        lower.startsWith("pm ")
+      );
+    });
+}
 
-  if (combined.length > 0) {
-    return dedupe(combined);
+function extractRequirementItems(sections: SectionMap): Array<{ section: string; text: string }> {
+  const items: Array<{ section: string; text: string }> = [];
+
+  for (const section of REQUIREMENT_SECTIONS) {
+    for (const item of extractRequirementItemsFromSectionLines(getSection(sections, section))) {
+      items.push({ section, text: item });
+    }
   }
 
-  return dedupe(purpose.map(stripBulletPrefix));
+  return dedupe(items.map((item) => `${item.section}\u0000${item.text}`)).map((value) => {
+    const [section, text] = value.split("\u0000");
+    return { section, text };
+  });
 }
 
 function summarizeRequirement(text: string): string {
@@ -223,7 +322,15 @@ function summarizeRequirement(text: string): string {
     lower.startsWith("create ") ||
     lower.startsWith("edit ") ||
     lower.startsWith("search ") ||
-    lower.startsWith("view ")
+    lower.startsWith("view ") ||
+    lower.startsWith("show ") ||
+    lower.startsWith("capture ") ||
+    lower.startsWith("let ") ||
+    lower.startsWith("allow ") ||
+    lower.startsWith("enable ") ||
+    lower.startsWith("the system") ||
+    lower.startsWith("the workspace") ||
+    lower.startsWith("the pm")
   ) {
     return cleaned.endsWith(".") ? cleaned : `${cleaned}.`;
   }
@@ -240,12 +347,15 @@ function classifyPriority(text: string): "high" | "medium" | "low" {
     value.includes("stream") ||
     value.includes("pipeline") ||
     value.includes("integration") ||
-    value.includes("compare")
+    value.includes("compare") ||
+    value.includes("persist") ||
+    value.includes("security") ||
+    value.includes("required")
   ) {
     return "high";
   }
 
-  if (value.includes("audit") || value.includes("history") || value.includes("search")) {
+  if (value.includes("audit") || value.includes("history") || value.includes("search") || value.includes("status")) {
     return "medium";
   }
 
@@ -253,34 +363,29 @@ function classifyPriority(text: string): "high" | "medium" | "low" {
 }
 
 function buildRequirements(sections: SectionMap): Requirement[] {
-  const purposeItems = extractPurposeItems(sections);
-  const prototypeGoals = getSection(sections, "Prototype Goals");
-  const scope = getSection(sections, "Scope");
-  const frontendLines = getSection(sections, "Frontend");
+  const requirementItems = extractRequirementItems(sections);
+  const contextLines = CONTEXT_SECTIONS.flatMap((section) => getSection(sections, section));
 
-  return purposeItems.map((item, index) => {
+  return requirementItems.map((item, index) => {
     const id = `REQ-${String(index + 1).padStart(3, "0")}`;
-    const title = titleCase(stripBulletPrefix(item).replace(/\.$/, ""));
-    const summary = summarizeRequirement(item);
-
-    const searchTerms = item.split(" ").slice(0, 4);
+    const title = titleCase(stripBulletPrefix(item.text).replace(/\.$/, ""));
+    const summary = summarizeRequirement(item.text);
+    const searchTerms = item.text.split(" ").slice(0, 4);
 
     const sourceRefs: SourceReference[] = [
       {
-        section: "Purpose",
-        excerpt: item
+        section: item.section,
+        excerpt: item.text
       },
-      ...findSourceRefs("Prototype Goals", prototypeGoals, searchTerms),
-      ...findSourceRefs("Scope", scope, searchTerms),
-      ...findSourceRefs("Frontend", frontendLines, searchTerms)
+      ...findSourceRefs("Problem/Purpose/Overview", contextLines, searchTerms)
     ];
 
     return {
       id,
       title,
       summary,
-      priority: classifyPriority(item),
-      source_refs: sourceRefs.length > 0 ? sourceRefs : [{ section: "Purpose", excerpt: item }]
+      priority: classifyPriority(item.text),
+      source_refs: sourceRefs.length > 0 ? sourceRefs : [{ section: item.section, excerpt: item.text }]
     };
   });
 }
@@ -295,34 +400,34 @@ function buildEpics(requirements: Requirement[]): Epic[] {
   }));
 }
 
-function buildAcceptanceCriteria(storyId: string, requirement: Requirement): AcceptanceCriterion[] {
-  const index = storyId.split("-")[1];
+function buildAcceptanceCriteria(issueId: string, requirement: Requirement): AcceptanceCriterion[] {
+  const index = issueId.split("-")[1];
 
   return [
     {
       id: `AC-${index}-001`,
-      story_id: storyId,
+      story_id: issueId,
       text: `${requirement.title} is represented in the generated backlog output.`
     },
     {
       id: `AC-${index}-002`,
-      story_id: storyId,
-      text: `${requirement.id} remains linked to its story and source references across repeated runs.`
+      story_id: issueId,
+      text: `${requirement.id} remains linked to its issue and source references across repeated runs.`
     }
   ];
 }
 
 function buildStories(requirements: Requirement[], epics: Epic[]): Story[] {
   return requirements.map((requirement, index) => {
-    const storyId = `STORY-${String(index + 1).padStart(3, "0")}`;
+    const issueId = `ISSUE-${String(index + 1).padStart(3, "0")}`;
 
     return {
-      id: storyId,
+      id: issueId,
       epic_id: epics[index].id,
       title: requirement.title,
       summary: requirement.summary,
       requirement_ids: [requirement.id],
-      acceptance_criteria: buildAcceptanceCriteria(storyId, requirement),
+      acceptance_criteria: buildAcceptanceCriteria(issueId, requirement),
       source_refs: requirement.source_refs
     };
   });
@@ -333,13 +438,13 @@ function buildRisks(sections: SectionMap, requirements: Requirement[]): Risk[] {
   const dependencyLines = getSection(sections, "Dependencies");
   const risks: Risk[] = [];
 
-  if (riskLines.length > 0) {
+  for (const [index, riskLine] of riskLines.map(stripBulletPrefix).filter(Boolean).entries()) {
     risks.push({
-      id: "RISK-001",
-      title: titleCase(stripBulletPrefix(riskLines[0]).replace(/\.$/, "")),
-      severity: "high",
+      id: `RISK-${String(index + 1).padStart(3, "0")}`,
+      title: titleCase(riskLine.replace(/\.$/, "")),
+      severity: index === 0 ? "high" : "medium",
       related_requirement_ids: requirements.slice(0, Math.min(4, requirements.length)).map((item) => item.id),
-      mitigation_note: riskLines[0]
+      mitigation_note: riskLine
     });
   }
 
@@ -347,11 +452,11 @@ function buildRisks(sections: SectionMap, requirements: Requirement[]): Risk[] {
     const dependencyExcerpt = dependencyLines.find((line) => !line.endsWith(":")) || dependencyLines[0];
 
     risks.push({
-      id: "RISK-002",
+      id: `RISK-${String(risks.length + 1).padStart(3, "0")}`,
       title: "External Dependencies May Delay Delivery",
       severity: "medium",
       related_requirement_ids: requirements.slice(0, Math.min(3, requirements.length)).map((item) => item.id),
-      mitigation_note: dependencyExcerpt
+      mitigation_note: stripBulletPrefix(dependencyExcerpt)
     });
   }
 
