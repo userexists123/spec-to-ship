@@ -2,11 +2,11 @@
 
 ## Current milestone
 
-Saturday 3 complete: PRD upload and analyze.
+Saturday 4 ready for deployment/test: trust layer v1 for generated backlog drafts.
 
 ## Current branch target
 
-`pilot-03 prd upload and analyze`
+`pilot-04 trustworthy generation metadata`
 
 ## Completed
 
@@ -47,6 +47,19 @@ Saturday 3 complete: PRD upload and analyze.
 - Added saved analyzed draft reload with `/prd?draftId=<draft-id>`.
 - Added recent PRD display on dashboard.
 
+### Saturday 4
+
+- Added deterministic ambiguity detection for vague wording, mixed scope, unclear ownership, non-testable outcomes, and missing non-functional details.
+- Added explicit vs inferred evidence labels to requirements, epics, issues, acceptance criteria, and risks.
+- Added High, Medium, and Low confidence scoring.
+- Added rationale/basis text under each generated item.
+- Persisted trust metadata inside `draft_json`.
+- Added normalized trust metadata columns to `backlog_item`, `acceptance_criterion`, and `risk_item`.
+- Added `ambiguity_warnings` persistence to `backlog_draft`.
+- Added PRD page ambiguity panel.
+- Added explicit/inferred badges and confidence badges.
+- Visually highlighted low-confidence or ambiguous generated items.
+
 ## Validation checklist
 
 ### Saturday 1
@@ -63,9 +76,15 @@ Saturday 3 complete: PRD upload and analyze.
 
 ### Saturday 3
 
-- Analyze a real PRD from the UI: ready for hosted validation.
-- Refresh the page and confirm draft persistence: ready for hosted validation using `/prd?draftId=<draft-id>`.
-- Verify draft data is stored in the database: ready for Supabase validation.
+- Analyze PRD from UI: complete.
+- Refresh page and confirm draft persistence: complete.
+- Verify draft data is stored in Supabase PostgreSQL: complete.
+
+### Saturday 4
+
+- Use one vague PRD and confirm ambiguity warnings appear: pending hosted validation.
+- Use one clearer PRD and confirm fewer warnings: pending hosted validation.
+- Verify explicit/inferred and confidence labels look sensible to a PM: pending hosted validation.
 
 ## Hosted validation notes
 
@@ -73,13 +92,13 @@ Saturday 3 complete: PRD upload and analyze.
 - Backend target: Railway.
 - Database target: Supabase PostgreSQL.
 - For Railway to Supabase connectivity, prefer the Supabase pooler connection string when IPv6 direct connection causes deployment/runtime connection failures.
-- Run `src/db/migrations/0003_prd_backlog_drafts.sql` in Supabase before testing the hosted PRD page.
+- Run `src/db/migrations/0004_trust_metadata.sql` in Supabase before testing new Saturday 4 analyses.
+- Existing Saturday 3 drafts can still load only if their stored `draft_json` already has trust metadata. Re-analyze a PRD after running the Saturday 4 migration to generate fully trusted metadata.
 
 ## Known gaps intentionally deferred
 
 - Editable backlog drafts are deferred to Saturday 5.
 - Azure DevOps backlog preview/create from saved draft is deferred to Saturday 5.
-- Ambiguity detection, confidence labels, and explicit/inferred tagging are deferred to Saturday 4.
 - RAG, pgvector, document ingestion, embeddings, and retrieval context are deferred to Saturday 6.
 - PR review browser page is deferred to Saturday 7.
 - Traceability page is deferred to Saturday 8.

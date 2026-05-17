@@ -47,6 +47,7 @@ export const backlogDraft = pgTable("backlog_draft", {
   title: text("title").notNull(),
   status: text("status").notNull().default("generated"),
   draftJson: jsonb("draft_json").notNull(),
+  ambiguityWarnings: jsonb("ambiguity_warnings").notNull().default([]),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
 });
@@ -62,6 +63,10 @@ export const backlogItem = pgTable("backlog_item", {
   priority: text("priority").notNull().default(""),
   requirementIds: jsonb("requirement_ids").notNull().default([]),
   sourceRefs: jsonb("source_refs").notNull().default([]),
+  evidenceLabel: text("evidence_label").notNull().default("inferred"),
+  confidence: text("confidence").notNull().default("Medium"),
+  rationale: text("rationale").notNull().default(""),
+  warnings: jsonb("warnings").notNull().default([]),
   sortOrder: integer("sort_order").notNull().default(0),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
 });
@@ -72,6 +77,10 @@ export const acceptanceCriterion = pgTable("acceptance_criterion", {
   storyExternalId: text("story_external_id").notNull(),
   externalId: text("external_id").notNull(),
   text: text("text").notNull(),
+  evidenceLabel: text("evidence_label").notNull().default("inferred"),
+  confidence: text("confidence").notNull().default("Medium"),
+  rationale: text("rationale").notNull().default(""),
+  warnings: jsonb("warnings").notNull().default([]),
   sortOrder: integer("sort_order").notNull().default(0),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
 });
@@ -84,6 +93,10 @@ export const riskItem = pgTable("risk_item", {
   severity: text("severity").notNull(),
   relatedRequirementIds: jsonb("related_requirement_ids").notNull().default([]),
   mitigationNote: text("mitigation_note").notNull().default(""),
+  evidenceLabel: text("evidence_label").notNull().default("inferred"),
+  confidence: text("confidence").notNull().default("Medium"),
+  rationale: text("rationale").notNull().default(""),
+  warnings: jsonb("warnings").notNull().default([]),
   sortOrder: integer("sort_order").notNull().default(0),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
 });

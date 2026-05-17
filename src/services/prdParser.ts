@@ -1,11 +1,15 @@
 import {
   AcceptanceCriterion,
   BacklogBundle,
+  ConfidenceLevel,
+  DraftAmbiguityWarning,
   Epic,
+  EvidenceLabel,
   Requirement,
   Risk,
   SourceReference,
-  Story
+  Story,
+  TrustMetadata
 } from "../schemas/backlog";
 
 type SectionMap = Record<string, string[]>;
@@ -50,6 +54,65 @@ const REQUIREMENT_SECTIONS = [
 ];
 
 const CONTEXT_SECTIONS = ["Problem", "Purpose", "Overview", "Background", "Frontend"];
+
+const VAGUE_WORDING_TERMS = [
+  "easy",
+  "simple",
+  "fast",
+  "slow",
+  "better",
+  "improve",
+  "improved",
+  "optimize",
+  "optimized",
+  "robust",
+  "scalable",
+  "secure",
+  "user friendly",
+  "intuitive",
+  "nice",
+  "clean",
+  "seamless",
+  "soon",
+  "later",
+  "eventually",
+  "as needed",
+  "etc",
+  "and so on"
+];
+
+const OWNERSHIP_TERMS = [
+  "owner",
+  "owned by",
+  "responsible",
+  "responsibility",
+  "pm",
+  "engineering",
+  "design",
+  "qa",
+  "support",
+  "admin",
+  "operator",
+  "user",
+  "customer"
+];
+
+const NON_FUNCTIONAL_TERMS = [
+  "performance",
+  "latency",
+  "availability",
+  "uptime",
+  "security",
+  "privacy",
+  "audit",
+  "scale",
+  "scalability",
+  "reliability",
+  "timeout",
+  "rate limit",
+  "accessibility",
+  "retention"
+];
 
 function normalizeLine(value: string): string {
   return value.replace(/\s+/g, " ").trim();
@@ -362,6 +425,217 @@ function classifyPriority(text: string): "high" | "medium" | "low" {
   return "medium";
 }
 
+function containsAnyTerm(value: string, terms: string[]): boolean {
+  const lower = value.toLowerCase();
+
+  return terms.some((term) => lower.includes(term));
+}
+
+function createTrustMetadata(input: {
+  evidenceLabel: EvidenceLabel;
+  confidence: ConfidenceLevel;
+  rationale: string;
+  warnings?: string[];
+}): TrustMetadata {
+  return {
+    evidence_label: input.evidenceLabel,
+    confidence: input.confidence,
+    rationale: input.rationale,
+    warnings: input.warnings ?? []
+  };
+}
+
+function getItemWarnings(text: string): string[] {
+  const warnings: string[] = [];
+  const lower = text.toLowerCase();
+
+  if (containsAnyTerm(lower, VAGUE_WORDING_TERMS)) {
+    warnings.push("Contains vague wording that may need PM clarification.");
+  }
+
+  if (!containsAnyTerm(lower, OWNERSHIP_TERMS)) {
+    warnings.push("Ownership or actor is not clearly stated.");
+  }
+
+  if (
+    lower.includes("improve") ||
+    lower.includes("optimize") ||
+    lower.includes("support") ||
+    lower.includes("handle") ||
+    lower.includes("manage")
+  ) {
+    const hasTestableSignal =
+      lower.includes("when ") ||
+      lower.includes("then ") ||
+      lower.includes("must ") ||
+      lower.includes("should ") ||
+      lower.includes("within ") ||
+      lower.includes("at least ") ||
+      lower.includes("no more than ") ||
+      /\d/.test(lower);
+
+    if (!hasTestableSignal) {
+      warnings.push("Outcome may not be directly testable without clearer acceptance criteria.");
+    }
+  }
+
+  return warnings;
+}
+
+function confidenceFromWarnings(evidenceLabel: EvidenceLabel, warningCount: number): ConfidenceLevel {
+  if (warningCount >= 2) {
+    return "Low";
+  }
+
+  if (warningCount === 1) {
+    return evidenceLabel === "explicit" ? "Medium" : "Low";
+  }
+
+  return evidenceLabel === "explicit" ? "High" : "Medium";
+}
+
+function buildRequirementTrust(section: string, text: string): TrustMetadata {
+  const warnings = getItemWarnings(text);
+  const evidenceLabel: EvidenceLabel = REQUIREMENT_SECTIONS.includes(section) ? "explicit" : "inferred";
+  const confidence = confidenceFromWarnings(evidenceLabel, warnings.length);
+
+  return createTrustMetadata({
+    evidenceLabel,
+    confidence,
+    rationale:
+      evidenceLabel === "explicit"
+        ? `Generated from explicit PRD text in the ${section} section.`
+        : `Inferred from related PRD context because no explicit requirement section entry was available.`,
+    warnings
+  });
+}
+
+function buildInferredTrust(input: {
+  basis: string;
+  sourceWarnings?: string[];
+  forceLowConfidence?: boolean;
+}): TrustMetadata {
+  const warnings = input.sourceWarnings ?? [];
+  const confidence = input.forceLowConfidence ? "Low" : confidenceFromWarnings("inferred", warnings.length);
+
+  return createTrustMetadata({
+    evidenceLabel: "inferred",
+    confidence,
+    rationale: input.basis,
+    warnings
+  });
+}
+
+function detectAmbiguityWarnings(sections: SectionMap, requirements: Requirement[]): DraftAmbiguityWarning[] {
+  const warnings: DraftAmbiguityWarning[] = [];
+  const allLines = Object.entries(sections).flatMap(([section, lines]) =>
+    lines.map((line) => ({
+      section,
+      line: stripBulletPrefix(line)
+    }))
+  );
+
+  const addWarning = (warning: Omit<DraftAmbiguityWarning, "id">): void => {
+    warnings.push({
+      id: `AMB-${String(warnings.length + 1).padStart(3, "0")}`,
+      ...warning
+    });
+  };
+
+  const vagueLine = allLines.find((item) => containsAnyTerm(item.line, VAGUE_WORDING_TERMS));
+  if (vagueLine) {
+    addWarning({
+      category: "vague_wording",
+      severity: "medium",
+      message: "Some PRD wording is subjective or underspecified.",
+      evidence: `${vagueLine.section}: ${vagueLine.line}`
+    });
+  }
+
+  const mixedScopeLine = allLines.find((item) => {
+    const lower = item.line.toLowerCase();
+
+    return (
+      (lower.includes("frontend") && lower.includes("backend")) ||
+      (lower.includes("ui") && lower.includes("api") && lower.includes("database")) ||
+      (lower.includes("admin") && lower.includes("customer") && lower.includes("operator"))
+    );
+  });
+
+  if (mixedScopeLine) {
+    addWarning({
+      category: "mixed_scope",
+      severity: "medium",
+      message: "A PRD line appears to combine multiple implementation scopes.",
+      evidence: `${mixedScopeLine.section}: ${mixedScopeLine.line}`
+    });
+  }
+
+  const unclearOwnershipRequirement = requirements.find((requirement) => {
+    const combined = `${requirement.title} ${requirement.summary}`;
+    return !containsAnyTerm(combined, OWNERSHIP_TERMS);
+  });
+
+  if (unclearOwnershipRequirement) {
+    addWarning({
+      category: "unclear_ownership",
+      severity: "low",
+      message: "At least one generated requirement does not clearly state the actor or owner.",
+      evidence: `${unclearOwnershipRequirement.id}: ${unclearOwnershipRequirement.title}`
+    });
+  }
+
+  const nonTestableRequirement = requirements.find((requirement) => {
+    const combined = `${requirement.title} ${requirement.summary}`.toLowerCase();
+
+    if (
+      !combined.includes("improve") &&
+      !combined.includes("optimize") &&
+      !combined.includes("support") &&
+      !combined.includes("handle") &&
+      !combined.includes("manage")
+    ) {
+      return false;
+    }
+
+    return (
+      !combined.includes("when ") &&
+      !combined.includes("then ") &&
+      !combined.includes("must ") &&
+      !combined.includes("should ") &&
+      !combined.includes("within ") &&
+      !combined.includes("at least ") &&
+      !combined.includes("no more than ") &&
+      !/\d/.test(combined)
+    );
+  });
+
+  if (nonTestableRequirement) {
+    addWarning({
+      category: "non_testable_outcome",
+      severity: "medium",
+      message: "At least one generated item may not be testable without sharper acceptance criteria.",
+      evidence: `${nonTestableRequirement.id}: ${nonTestableRequirement.title}`
+    });
+  }
+
+  const nonFunctionalLines = getSection(sections, "Non-Functional Requirements");
+  const hasNonFunctionalDetails =
+    nonFunctionalLines.length > 0 ||
+    allLines.some((item) => containsAnyTerm(item.line, NON_FUNCTIONAL_TERMS));
+
+  if (!hasNonFunctionalDetails) {
+    addWarning({
+      category: "missing_non_functional_details",
+      severity: "high",
+      message: "The PRD does not appear to specify non-functional expectations.",
+      evidence: "No clear performance, security, reliability, scale, accessibility, or operational detail found."
+    });
+  }
+
+  return warnings;
+}
+
 function buildRequirements(sections: SectionMap): Requirement[] {
   const requirementItems = extractRequirementItems(sections);
   const contextLines = CONTEXT_SECTIONS.flatMap((section) => getSection(sections, section));
@@ -385,7 +659,8 @@ function buildRequirements(sections: SectionMap): Requirement[] {
       title,
       summary,
       priority: classifyPriority(item.text),
-      source_refs: sourceRefs.length > 0 ? sourceRefs : [{ section: item.section, excerpt: item.text }]
+      source_refs: sourceRefs.length > 0 ? sourceRefs : [{ section: item.section, excerpt: item.text }],
+      trust: buildRequirementTrust(item.section, item.text)
     };
   });
 }
@@ -396,7 +671,11 @@ function buildEpics(requirements: Requirement[]): Epic[] {
     title: requirement.title,
     summary: requirement.summary,
     requirement_ids: [requirement.id],
-    source_refs: requirement.source_refs
+    source_refs: requirement.source_refs,
+    trust: buildInferredTrust({
+      basis: `Epic inferred from ${requirement.id} to group related delivery work for Azure DevOps.`,
+      sourceWarnings: requirement.trust.warnings
+    })
   }));
 }
 
@@ -407,12 +686,20 @@ function buildAcceptanceCriteria(issueId: string, requirement: Requirement): Acc
     {
       id: `AC-${index}-001`,
       story_id: issueId,
-      text: `${requirement.title} is represented in the generated backlog output.`
+      text: `${requirement.title} is represented in the generated backlog output.`,
+      trust: buildInferredTrust({
+        basis: `Acceptance criterion inferred from ${requirement.id} because the PRD did not provide item-level acceptance criteria for this issue.`,
+        sourceWarnings: requirement.trust.warnings
+      })
     },
     {
       id: `AC-${index}-002`,
       story_id: issueId,
-      text: `${requirement.id} remains linked to its issue and source references across repeated runs.`
+      text: `${requirement.id} remains linked to its issue and source references across repeated runs.`,
+      trust: buildInferredTrust({
+        basis: `Traceability criterion inferred from ${requirement.id} to preserve requirement-to-issue linkage.`,
+        sourceWarnings: []
+      })
     }
   ];
 }
@@ -428,7 +715,11 @@ function buildStories(requirements: Requirement[], epics: Epic[]): Story[] {
       summary: requirement.summary,
       requirement_ids: [requirement.id],
       acceptance_criteria: buildAcceptanceCriteria(issueId, requirement),
-      source_refs: requirement.source_refs
+      source_refs: requirement.source_refs,
+      trust: buildInferredTrust({
+        basis: `Issue inferred from ${requirement.id} for implementation tracking under ${epics[index].id}.`,
+        sourceWarnings: requirement.trust.warnings
+      })
     };
   });
 }
@@ -439,24 +730,41 @@ function buildRisks(sections: SectionMap, requirements: Requirement[]): Risk[] {
   const risks: Risk[] = [];
 
   for (const [index, riskLine] of riskLines.map(stripBulletPrefix).filter(Boolean).entries()) {
+    const itemWarnings = getItemWarnings(riskLine);
+    const confidence = confidenceFromWarnings("explicit", itemWarnings.length);
+
     risks.push({
       id: `RISK-${String(index + 1).padStart(3, "0")}`,
       title: titleCase(riskLine.replace(/\.$/, "")),
       severity: index === 0 ? "high" : "medium",
       related_requirement_ids: requirements.slice(0, Math.min(4, requirements.length)).map((item) => item.id),
-      mitigation_note: riskLine
+      mitigation_note: riskLine,
+      trust: createTrustMetadata({
+        evidenceLabel: "explicit",
+        confidence,
+        rationale: "Risk generated from explicit PRD risk or assumption text.",
+        warnings: itemWarnings
+      })
     });
   }
 
   if (dependencyLines.length > 0) {
     const dependencyExcerpt = dependencyLines.find((line) => !line.endsWith(":")) || dependencyLines[0];
+    const cleanedDependencyExcerpt = stripBulletPrefix(dependencyExcerpt);
+    const itemWarnings = getItemWarnings(cleanedDependencyExcerpt);
 
     risks.push({
       id: `RISK-${String(risks.length + 1).padStart(3, "0")}`,
       title: "External Dependencies May Delay Delivery",
       severity: "medium",
       related_requirement_ids: requirements.slice(0, Math.min(3, requirements.length)).map((item) => item.id),
-      mitigation_note: stripBulletPrefix(dependencyExcerpt)
+      mitigation_note: cleanedDependencyExcerpt,
+      trust: createTrustMetadata({
+        evidenceLabel: "inferred",
+        confidence: confidenceFromWarnings("inferred", itemWarnings.length),
+        rationale: "Risk inferred from explicit dependency information in the PRD.",
+        warnings: itemWarnings
+      })
     });
   }
 
@@ -469,6 +777,7 @@ export function parsePrdToBacklog(prdText: string, prdId = "prd-golden"): Backlo
   const epics = buildEpics(requirements);
   const stories = buildStories(requirements, epics);
   const risks = buildRisks(sections, requirements);
+  const ambiguityWarnings = detectAmbiguityWarnings(sections, requirements);
 
   return {
     prd_id: prdId,
@@ -476,6 +785,7 @@ export function parsePrdToBacklog(prdText: string, prdId = "prd-golden"): Backlo
     requirements,
     epics,
     stories,
-    risks
+    risks,
+    ambiguity_warnings: ambiguityWarnings
   };
 }

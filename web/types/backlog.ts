@@ -3,12 +3,36 @@ export interface SourceReference {
   excerpt: string;
 }
 
+export type EvidenceLabel = "explicit" | "inferred";
+export type ConfidenceLevel = "High" | "Medium" | "Low";
+
+export interface TrustMetadata {
+  evidence_label: EvidenceLabel;
+  confidence: ConfidenceLevel;
+  rationale: string;
+  warnings: string[];
+}
+
+export interface DraftAmbiguityWarning {
+  id: string;
+  category:
+    | "vague_wording"
+    | "mixed_scope"
+    | "unclear_ownership"
+    | "non_testable_outcome"
+    | "missing_non_functional_details";
+  severity: "high" | "medium" | "low";
+  message: string;
+  evidence: string;
+}
+
 export interface Requirement {
   id: string;
   title: string;
   summary: string;
   priority: "high" | "medium" | "low";
   source_refs: SourceReference[];
+  trust: TrustMetadata;
 }
 
 export interface Epic {
@@ -17,12 +41,14 @@ export interface Epic {
   summary: string;
   requirement_ids: string[];
   source_refs: SourceReference[];
+  trust: TrustMetadata;
 }
 
 export interface AcceptanceCriterion {
   id: string;
   story_id: string;
   text: string;
+  trust: TrustMetadata;
 }
 
 export interface Story {
@@ -33,6 +59,7 @@ export interface Story {
   requirement_ids: string[];
   acceptance_criteria: AcceptanceCriterion[];
   source_refs: SourceReference[];
+  trust: TrustMetadata;
 }
 
 export interface Risk {
@@ -41,6 +68,7 @@ export interface Risk {
   severity: "high" | "medium" | "low";
   related_requirement_ids: string[];
   mitigation_note: string;
+  trust: TrustMetadata;
 }
 
 export interface BacklogBundle {
@@ -50,6 +78,7 @@ export interface BacklogBundle {
   epics: Epic[];
   stories: Story[];
   risks: Risk[];
+  ambiguity_warnings: DraftAmbiguityWarning[];
 }
 
 export interface PrdDocumentRecord {

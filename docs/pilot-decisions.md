@@ -51,3 +51,13 @@
 - Did not add LLM orchestration, agent frameworks, embeddings, RAG, or editable draft behavior in Saturday 3.
 - Added `/prd` as the browser-first PRD paste/upload and analysis page.
 - Added saved draft reload using `/prd?draftId=<draft-id>`.
+
+## Saturday 4 decisions
+
+- Kept trust metadata deterministic and parser-based; no LLM orchestration, agents, or fallback generation were added.
+- Stored trust metadata inside the saved draft JSON so the PRD page can reload exactly what was generated.
+- Added normalized trust metadata columns to generated backlog support tables for future querying and review workflows.
+- Used `explicit` only when the item comes directly from explicit PRD requirement/risk sections.
+- Used `inferred` for generated Epics, Issues, acceptance criteria, and dependency-derived risks because those structures are backlog transformations rather than direct PRD text.
+- Used High/Medium/Low confidence labels based on direct source evidence and detected ambiguity warnings.
+- Kept Azure DevOps work item language as Epic and Issue only.
