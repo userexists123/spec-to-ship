@@ -1,14 +1,17 @@
 "use client";
 
-import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
+import { ChangeEvent, FormEvent, ReactNode, useEffect, useMemo, useState } from "react";
 import {
+  AcceptanceCriterion,
   BacklogBundle,
   BacklogDraftRecord,
+  DraftAmbiguityWarning,
   Epic,
   PrdDocumentRecord,
   Requirement,
   Risk,
-  Story
+  Story,
+  TrustMetadata
 } from "../../types/backlog";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:7071/api";
@@ -37,24 +40,19 @@ interface DraftViewState {
   draft: BacklogDraftRecord | null;
 }
 
-const examplePrd = `# Customer Support Intake Improvements
+const examplePrd = `# Smart Support Workspace
 
 ## Problem
-Support managers need a faster way to triage incoming customer requests and assign them to the correct team.
-
-## Goals
-- Capture every customer support request in one queue.
-- Let support managers assign priority and owner.
-- Show status changes clearly for each request.
+Support teams need a better way to manage customer issues.
 
 ## Requirements
-- The workspace must let a PM create a support intake backlog from pasted PRD text.
-- Support managers must be able to see high priority requests first.
-- Each request must have acceptance criteria before it is moved to ready for implementation.
+- The system should make issue handling faster and easier.
+- Users should be able to see important customer problems.
+- The workspace should support follow ups as needed.
+- Improve visibility for managers.
 
-## Risks
-- Priority rules may be unclear for mixed severity requests.
-- Existing work item naming conventions may differ across teams.`;
+## Dependencies
+- Depends on CRM data and notification services.`;
 
 function formatDateTime(value: string | undefined): string {
   if (!value) {
@@ -84,11 +82,93 @@ async function readError(response: Response, fallback: string): Promise<string> 
   }
 }
 
-function Badge({ children }: { children: React.ReactNode }) {
+function countTrustItems(backlog: BacklogBundle): {
+  explicit: number;
+  inferred: number;
+  high: number;
+  medium: number;
+  low: number;
+  warningItems: number;
+} {
+  const trustItems: TrustMetadata[] = [
+    ...backlog.requirements.map((item) => item.trust),
+    ...backlog.epics.map((item) => item.trust),
+    ...backlog.stories.map((item) => item.trust),
+    ...backlog.stories.flatMap((story) => story.acceptance_criteria.map((criterion) => criterion.trust)),
+    ...backlog.risks.map((item) => item.trust)
+  ];
+
+  return {
+    explicit: trustItems.filter((item) => item.evidence_label === "explicit").length,
+    inferred: trustItems.filter((item) => item.evidence_label === "inferred").length,
+    high: trustItems.filter((item) => item.confidence === "High").length,
+    medium: trustItems.filter((item) => item.confidence === "Medium").length,
+    low: trustItems.filter((item) => item.confidence === "Low").length,
+    warningItems: trustItems.filter((item) => item.warnings.length > 0).length
+  };
+}
+
+function trustCardClassName(trust: TrustMetadata): string {
+  if (trust.confidence === "Low" || trust.warnings.length > 0) {
+    return "rounded-xl border border-amber-300 bg-amber-50/40 p-4";
+  }
+
+  return "rounded-xl border border-slate-200 p-4";
+}
+
+function Badge({
+  children,
+  tone = "neutral"
+}: {
+  children: ReactNode;
+  tone?: "neutral" | "blue" | "purple" | "green" | "amber" | "red";
+}) {
+  const toneClassName = {
+    neutral: "border-slate-200 bg-slate-50 text-slate-700",
+    blue: "border-blue-200 bg-blue-50 text-blue-700",
+    purple: "border-purple-200 bg-purple-50 text-purple-700",
+    green: "border-green-200 bg-green-50 text-green-700",
+    amber: "border-amber-200 bg-amber-50 text-amber-800",
+    red: "border-red-200 bg-red-50 text-red-700"
+  }[tone];
+
   return (
-    <span className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-xs font-medium text-slate-700">
+    <span className={`rounded-full border px-2 py-0.5 text-xs font-medium ${toneClassName}`}>
       {children}
     </span>
+  );
+}
+
+function EvidenceBadge({ trust }: { trust: TrustMetadata }) {
+  return (
+    <Badge tone={trust.evidence_label === "explicit" ? "green" : "purple"}>
+      {trust.evidence_label === "explicit" ? "Explicit" : "Inferred"}
+    </Badge>
+  );
+}
+
+function ConfidenceBadge({ trust }: { trust: TrustMetadata }) {
+  const tone = trust.confidence === "High" ? "green" : trust.confidence === "Medium" ? "amber" : "red";
+
+  return <Badge tone={tone}>{trust.confidence} confidence</Badge>;
+}
+
+function TrustDetails({ trust }: { trust: TrustMetadata }) {
+  return (
+    <div className="mt-3 rounded-lg border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
+      <div>
+        <span className="font-semibold text-slate-700">Basis: </span>
+        {trust.rationale}
+      </div>
+
+      {trust.warnings.length > 0 ? (
+        <ul className="mt-2 list-disc space-y-1 pl-5 text-amber-800">
+          {trust.warnings.map((warning, index) => (
+            <li key={`${warning}-${index}`}>{warning}</li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
   );
 }
 
@@ -99,7 +179,7 @@ function SectionCard({
 }: {
   title: string;
   count: number;
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -129,15 +209,56 @@ function SourceRefs({ refs }: { refs: { section: string; excerpt: string }[] }) 
   );
 }
 
+function AmbiguityPanel({ warnings }: { warnings: DraftAmbiguityWarning[] }) {
+  return (
+    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-semibold uppercase tracking-wide text-slate-500">Trust layer</p>
+          <h2 className="mt-2 text-xl font-bold text-slate-950">Ambiguity panel</h2>
+          <p className="mt-2 text-sm leading-6 text-slate-600">
+            These warnings explain where the generated backlog may need PM review before Azure DevOps creation.
+          </p>
+        </div>
+        <Badge tone={warnings.length > 0 ? "amber" : "green"}>{warnings.length} warnings</Badge>
+      </div>
+
+      {warnings.length > 0 ? (
+        <div className="mt-4 grid gap-3">
+          {warnings.map((warning) => (
+            <article key={warning.id} className="rounded-xl border border-amber-200 bg-amber-50 p-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge tone={warning.severity === "high" ? "red" : warning.severity === "medium" ? "amber" : "blue"}>
+                  {warning.severity} severity
+                </Badge>
+                <Badge>{warning.category.replace(/_/g, " ")}</Badge>
+              </div>
+              <h3 className="mt-3 font-semibold text-slate-950">{warning.message}</h3>
+              <p className="mt-2 text-sm leading-6 text-slate-700">{warning.evidence}</p>
+            </article>
+          ))}
+        </div>
+      ) : (
+        <div className="mt-4 rounded-xl border border-green-200 bg-green-50 p-4 text-sm text-green-800">
+          No ambiguity warnings were detected for this draft.
+        </div>
+      )}
+    </section>
+  );
+}
+
 function RequirementCard({ requirement }: { requirement: Requirement }) {
   return (
-    <article className="rounded-xl border border-slate-200 p-4">
+    <article className={trustCardClassName(requirement.trust)}>
       <div className="flex flex-wrap items-center gap-2">
         <Badge>{requirement.id}</Badge>
         <Badge>{requirement.priority}</Badge>
+        <EvidenceBadge trust={requirement.trust} />
+        <ConfidenceBadge trust={requirement.trust} />
       </div>
       <h3 className="mt-3 font-semibold text-slate-950">{requirement.title}</h3>
       <p className="mt-2 text-sm leading-6 text-slate-600">{requirement.summary}</p>
+      <TrustDetails trust={requirement.trust} />
       <SourceRefs refs={requirement.source_refs} />
     </article>
   );
@@ -147,10 +268,12 @@ function EpicCard({ epic, stories }: { epic: Epic; stories: Story[] }) {
   const childStories = stories.filter((story) => story.epic_id === epic.id);
 
   return (
-    <article className="rounded-xl border border-slate-200 p-4">
+    <article className={trustCardClassName(epic.trust)}>
       <div className="flex flex-wrap items-center gap-2">
         <Badge>{epic.id}</Badge>
         <Badge>{childStories.length} issues</Badge>
+        <EvidenceBadge trust={epic.trust} />
+        <ConfidenceBadge trust={epic.trust} />
       </div>
       <h3 className="mt-3 font-semibold text-slate-950">{epic.title}</h3>
       <p className="mt-2 text-sm leading-6 text-slate-600">{epic.summary}</p>
@@ -159,29 +282,44 @@ function EpicCard({ epic, stories }: { epic: Epic; stories: Story[] }) {
           <Badge key={id}>{id}</Badge>
         ))}
       </div>
+      <TrustDetails trust={epic.trust} />
       <SourceRefs refs={epic.source_refs} />
     </article>
   );
 }
 
+function AcceptanceCriterionCard({ criterion }: { criterion: AcceptanceCriterion }) {
+  return (
+    <li className={trustCardClassName(criterion.trust)}>
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge>{criterion.id}</Badge>
+        <EvidenceBadge trust={criterion.trust} />
+        <ConfidenceBadge trust={criterion.trust} />
+      </div>
+      <p className="mt-2 text-sm leading-6 text-slate-700">{criterion.text}</p>
+      <TrustDetails trust={criterion.trust} />
+    </li>
+  );
+}
+
 function StoryCard({ story }: { story: Story }) {
   return (
-    <article className="rounded-xl border border-slate-200 p-4">
+    <article className={trustCardClassName(story.trust)}>
       <div className="flex flex-wrap items-center gap-2">
         <Badge>{story.id}</Badge>
         <Badge>Epic {story.epic_id}</Badge>
+        <EvidenceBadge trust={story.trust} />
+        <ConfidenceBadge trust={story.trust} />
       </div>
       <h3 className="mt-3 font-semibold text-slate-950">{story.title}</h3>
       <p className="mt-2 text-sm leading-6 text-slate-600">{story.summary}</p>
+      <TrustDetails trust={story.trust} />
 
       <div className="mt-4">
         <h4 className="text-sm font-semibold text-slate-800">Acceptance criteria</h4>
-        <ul className="mt-2 space-y-2 text-sm text-slate-600">
+        <ul className="mt-2 space-y-2">
           {story.acceptance_criteria.map((criterion) => (
-            <li key={criterion.id} className="rounded-lg bg-slate-50 p-3">
-              <span className="font-medium text-slate-800">{criterion.id}: </span>
-              {criterion.text}
-            </li>
+            <AcceptanceCriterionCard key={criterion.id} criterion={criterion} />
           ))}
         </ul>
       </div>
@@ -193,10 +331,12 @@ function StoryCard({ story }: { story: Story }) {
 
 function RiskCard({ risk }: { risk: Risk }) {
   return (
-    <article className="rounded-xl border border-slate-200 p-4">
+    <article className={trustCardClassName(risk.trust)}>
       <div className="flex flex-wrap items-center gap-2">
         <Badge>{risk.id}</Badge>
         <Badge>{risk.severity}</Badge>
+        <EvidenceBadge trust={risk.trust} />
+        <ConfidenceBadge trust={risk.trust} />
       </div>
       <h3 className="mt-3 font-semibold text-slate-950">{risk.title}</h3>
       <p className="mt-2 text-sm leading-6 text-slate-600">{risk.mitigation_note}</p>
@@ -205,6 +345,7 @@ function RiskCard({ risk }: { risk: Risk }) {
           <Badge key={id}>{id}</Badge>
         ))}
       </div>
+      <TrustDetails trust={risk.trust} />
     </article>
   );
 }
@@ -212,6 +353,8 @@ function RiskCard({ risk }: { risk: Risk }) {
 function DraftRenderer({ backlog }: { backlog: BacklogBundle }) {
   return (
     <div className="space-y-6">
+      <AmbiguityPanel warnings={backlog.ambiguity_warnings} />
+
       <SectionCard title="Requirements" count={backlog.requirements.length}>
         <div className="grid gap-4">
           {backlog.requirements.map((requirement) => (
@@ -257,6 +400,8 @@ export default function PrdPage() {
   const [loadedDraftId, setLoadedDraftId] = useState("");
 
   const canAnalyze = useMemo(() => prdText.trim().length > 0 && !isSubmitting, [prdText, isSubmitting]);
+  const draft = state.draft;
+  const trustStats = draft ? countTrustItems(draft.draft) : null;
 
   useEffect(() => {
     const draftId = getDraftIdFromUrl();
@@ -377,19 +522,17 @@ export default function PrdPage() {
     }
   }
 
-  const draft = state.draft;
-
   return (
     <div className="space-y-8">
       <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
         <div className="max-w-3xl">
-          <p className="text-sm font-semibold uppercase tracking-wide text-slate-500">Saturday 3</p>
+          <p className="text-sm font-semibold uppercase tracking-wide text-slate-500">Saturday 4</p>
           <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-950">
-            PRD upload and backlog draft generation
+            PRD trust layer and backlog confidence metadata
           </h1>
           <p className="mt-3 text-sm leading-6 text-slate-600">
-            Paste or upload a PRD, analyze it with the existing deterministic parser, and save the generated backlog
-            draft in Supabase PostgreSQL through the Railway backend.
+            Paste or upload a PRD, analyze it with the deterministic parser, and inspect ambiguity warnings,
+            explicit/inferred labels, confidence, and rationale before trusting the generated backlog.
           </p>
         </div>
       </section>
@@ -401,13 +544,13 @@ export default function PrdPage() {
             <button
               type="button"
               onClick={() => {
-                setTitle("Customer Support Intake Improvements");
+                setTitle("Smart Support Workspace");
                 setPrdText(examplePrd);
                 setError("");
               }}
               className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
             >
-              Use sample
+              Use vague sample
             </button>
           </div>
 
@@ -525,6 +668,42 @@ export default function PrdPage() {
             ) : (
               <p className="mt-3 text-sm leading-6 text-slate-600">
                 The analyzed draft will render requirements, epics, issues, acceptance criteria, and risks here.
+              </p>
+            )}
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+            <h2 className="text-lg font-semibold text-slate-950">Trust metadata</h2>
+            {draft && trustStats ? (
+              <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+                <div className="rounded-xl bg-green-50 p-3">
+                  <div className="text-2xl font-bold text-green-800">{trustStats.explicit}</div>
+                  <div className="text-green-700">Explicit</div>
+                </div>
+                <div className="rounded-xl bg-purple-50 p-3">
+                  <div className="text-2xl font-bold text-purple-800">{trustStats.inferred}</div>
+                  <div className="text-purple-700">Inferred</div>
+                </div>
+                <div className="rounded-xl bg-green-50 p-3">
+                  <div className="text-2xl font-bold text-green-800">{trustStats.high}</div>
+                  <div className="text-green-700">High confidence</div>
+                </div>
+                <div className="rounded-xl bg-red-50 p-3">
+                  <div className="text-2xl font-bold text-red-800">{trustStats.low}</div>
+                  <div className="text-red-700">Low confidence</div>
+                </div>
+                <div className="rounded-xl bg-amber-50 p-3">
+                  <div className="text-2xl font-bold text-amber-800">{trustStats.medium}</div>
+                  <div className="text-amber-700">Medium confidence</div>
+                </div>
+                <div className="rounded-xl bg-amber-50 p-3">
+                  <div className="text-2xl font-bold text-amber-800">{trustStats.warningItems}</div>
+                  <div className="text-amber-700">Item warnings</div>
+                </div>
+              </div>
+            ) : (
+              <p className="mt-3 text-sm leading-6 text-slate-600">
+                After analysis, this card shows explicit/inferred counts and confidence distribution.
               </p>
             )}
           </div>

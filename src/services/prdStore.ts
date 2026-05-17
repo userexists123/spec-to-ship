@@ -1,4 +1,4 @@
-import { BacklogBundle } from "../schemas/backlog";
+import { BacklogBundle, TrustMetadata } from "../schemas/backlog";
 import { PoolClient } from "pg";
 import { getPgPool } from "./database";
 
@@ -63,6 +63,15 @@ function mapBacklogDraft(row: Record<string, unknown>): BacklogDraftRecord {
   };
 }
 
+function trustValues(trust: TrustMetadata): [string, string, string, string] {
+  return [
+    trust.evidence_label,
+    trust.confidence,
+    trust.rationale,
+    JSON.stringify(trust.warnings)
+  ];
+}
+
 export function parsePrdCreateBody(body: Record<string, unknown>): { title: string; rawText: string } {
   const rawText = typeof body.prdText === "string" ? body.prdText.trim() : "";
   const providedTitle = typeof body.title === "string" ? body.title.trim() : "";
@@ -108,7 +117,6 @@ async function replaceNormalizedDraftRows(
   draftId: string,
   backlog: BacklogBundle
 ): Promise<void> {
-
   for (const [index, requirement] of backlog.requirements.entries()) {
     await client.query(
       `insert into backlog_item (
@@ -121,8 +129,27 @@ async function replaceNormalizedDraftRows(
          priority,
          requirement_ids,
          source_refs,
+         evidence_label,
+         confidence,
+         rationale,
+         warnings,
          sort_order
-       ) values ($1, 'requirement', $2, '', $3, $4, $5, $6::jsonb, $7::jsonb, $8)`,
+       ) values (
+         $1,
+         'requirement',
+         $2,
+         '',
+         $3,
+         $4,
+         $5,
+         $6::jsonb,
+         $7::jsonb,
+         $8,
+         $9,
+         $10,
+         $11::jsonb,
+         $12
+       )`,
       [
         draftId,
         requirement.id,
@@ -131,6 +158,7 @@ async function replaceNormalizedDraftRows(
         requirement.priority,
         JSON.stringify([requirement.id]),
         JSON.stringify(requirement.source_refs),
+        ...trustValues(requirement.trust),
         index
       ]
     );
@@ -148,8 +176,27 @@ async function replaceNormalizedDraftRows(
          priority,
          requirement_ids,
          source_refs,
+         evidence_label,
+         confidence,
+         rationale,
+         warnings,
          sort_order
-       ) values ($1, 'epic', $2, '', $3, $4, '', $5::jsonb, $6::jsonb, $7)`,
+       ) values (
+         $1,
+         'epic',
+         $2,
+         '',
+         $3,
+         $4,
+         '',
+         $5::jsonb,
+         $6::jsonb,
+         $7,
+         $8,
+         $9,
+         $10::jsonb,
+         $11
+       )`,
       [
         draftId,
         epic.id,
@@ -157,6 +204,7 @@ async function replaceNormalizedDraftRows(
         epic.summary,
         JSON.stringify(epic.requirement_ids),
         JSON.stringify(epic.source_refs),
+        ...trustValues(epic.trust),
         index
       ]
     );
@@ -174,8 +222,27 @@ async function replaceNormalizedDraftRows(
          priority,
          requirement_ids,
          source_refs,
+         evidence_label,
+         confidence,
+         rationale,
+         warnings,
          sort_order
-       ) values ($1, 'issue', $2, $3, $4, $5, '', $6::jsonb, $7::jsonb, $8)`,
+       ) values (
+         $1,
+         'issue',
+         $2,
+         $3,
+         $4,
+         $5,
+         '',
+         $6::jsonb,
+         $7::jsonb,
+         $8,
+         $9,
+         $10,
+         $11::jsonb,
+         $12
+       )`,
       [
         draftId,
         story.id,
@@ -184,6 +251,7 @@ async function replaceNormalizedDraftRows(
         story.summary,
         JSON.stringify(story.requirement_ids),
         JSON.stringify(story.source_refs),
+        ...trustValues(story.trust),
         index
       ]
     );
@@ -195,9 +263,30 @@ async function replaceNormalizedDraftRows(
            story_external_id,
            external_id,
            text,
+           evidence_label,
+           confidence,
+           rationale,
+           warnings,
            sort_order
-         ) values ($1, $2, $3, $4, $5)`,
-        [draftId, story.id, criterion.id, criterion.text, criterionIndex]
+         ) values (
+           $1,
+           $2,
+           $3,
+           $4,
+           $5,
+           $6,
+           $7,
+           $8::jsonb,
+           $9
+         )`,
+        [
+          draftId,
+          story.id,
+          criterion.id,
+          criterion.text,
+          ...trustValues(criterion.trust),
+          criterionIndex
+        ]
       );
     }
   }
@@ -211,8 +300,24 @@ async function replaceNormalizedDraftRows(
          severity,
          related_requirement_ids,
          mitigation_note,
+         evidence_label,
+         confidence,
+         rationale,
+         warnings,
          sort_order
-       ) values ($1, $2, $3, $4, $5::jsonb, $6, $7)`,
+       ) values (
+         $1,
+         $2,
+         $3,
+         $4,
+         $5::jsonb,
+         $6,
+         $7,
+         $8,
+         $9,
+         $10::jsonb,
+         $11
+       )`,
       [
         draftId,
         risk.id,
@@ -220,6 +325,7 @@ async function replaceNormalizedDraftRows(
         risk.severity,
         JSON.stringify(risk.related_requirement_ids),
         risk.mitigation_note,
+        ...trustValues(risk.trust),
         index
       ]
     );
@@ -237,10 +343,26 @@ export async function createGeneratedDraft(input: {
     await client.query("begin");
 
     const result = await client.query(
-      `insert into backlog_draft (prd_document_id, title, status, draft_json)
-       values ($1, $2, 'generated', $3::jsonb)
+      `insert into backlog_draft (
+         prd_document_id,
+         title,
+         status,
+         draft_json,
+         ambiguity_warnings
+       ) values (
+         $1,
+         $2,
+         'generated',
+         $3::jsonb,
+         $4::jsonb
+       )
        returning id, prd_document_id, title, status, draft_json, created_at, updated_at`,
-      [input.prdDocumentId, input.backlog.title, JSON.stringify(input.backlog)]
+      [
+        input.prdDocumentId,
+        input.backlog.title,
+        JSON.stringify(input.backlog),
+        JSON.stringify(input.backlog.ambiguity_warnings)
+      ]
     );
 
     const draft = mapBacklogDraft(result.rows[0]);
