@@ -24,6 +24,9 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
                 <Link href="/workspace" className="hover:text-slate-950">
                   Workspace
                 </Link>
+                <Link href="/prd" className="hover:text-slate-950">
+                  PRD
+                </Link>
               </nav>
             </div>
           </header>

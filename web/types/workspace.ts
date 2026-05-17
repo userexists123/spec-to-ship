@@ -39,3 +39,10 @@ export interface RecentPrSummary {
   prTitle: string;
   createdAt: string;
 }
+
+export interface RecentPrdSummary {
+  id: string;
+  prdId: string;
+  title: string;
+  createdAt: string;
+}

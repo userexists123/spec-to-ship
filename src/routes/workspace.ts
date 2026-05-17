@@ -2,6 +2,7 @@ import { app, HttpRequest, HttpResponseInit, InvocationContext } from "@azure/fu
 import { emptyResponse, jsonResponse, readJsonObject } from "../services/http";
 import {
   getWorkspaceSettings,
+  listRecentPrds,
   listRecentPrs,
   parseWorkspaceSettings,
   upsertWorkspaceSettings
@@ -19,11 +20,13 @@ export async function workspaceRoute(
     if (request.method === "GET") {
       const workspace = await getWorkspaceSettings();
       const recentPrs = await listRecentPrs(5);
+      const recentPrds = await listRecentPrds(5);
 
       return jsonResponse(200, {
         ok: true,
         workspace,
-        recentPrs
+        recentPrs,
+        recentPrds
       });
     }
 
@@ -31,11 +34,13 @@ export async function workspaceRoute(
       const body = await readJsonObject(request);
       const saved = await upsertWorkspaceSettings(parseWorkspaceSettings(body));
       const recentPrs = await listRecentPrs(5);
+      const recentPrds = await listRecentPrds(5);
 
       return jsonResponse(200, {
         ok: true,
         workspace: saved,
-        recentPrs
+        recentPrs,
+        recentPrds
       });
     }
 

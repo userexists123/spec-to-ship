@@ -1,19 +1,53 @@
 # Pilot Decisions
 
-## 2026-04-25 - Saturday 1 foundation
+## Product direction
 
-- Frontend is a separate `web/` Next.js app intended for Vercel deployment.
-- Backend remains the existing Azure Functions-style Node/TypeScript app already containerized for Railway.
-- Database is Supabase Postgres, configured in Railway with `DATABASE_URL`.
-- The Azure DevOps PAT remains server-side in Railway; the browser saves only org/project/default workspace preferences.
-- Workspace persistence uses a singleton row because the pilot is explicitly single-user and has no auth.
-- `GET /repos` uses the saved workspace org URL and project, then calls Azure DevOps REST live. It fails if `DEMO_MODE=true`.
-- Epic/Issue mappings are saved in workspace settings now and can be reused by later backlog execution work.
+- Build Spec-to-Ship as a single-PM browser-first pilot product.
+- The browser UI is the primary interface.
+- The custom GPT flow is secondary and optional.
+- Do not add authentication, users, teams, or role management in the pilot branch.
 
-## 2026-05-02 - Saturday 2 repo and PR selectors
+## Hosting direction
 
-- The home page is now the PM dashboard for saved workspace context and PR selection.
-- Repo and PR selection remain part of the singleton workspace record because the pilot is still single-user and has no auth.
-- Recent PR history is append-only for now; deduplication and cleanup are deferred unless the pilot needs it.
-- `GET /repos/{repoId}/pull-requests` uses live Azure DevOps REST and does not provide demo/fake PR fallback behavior.
-- Last used PRD remains a dashboard placeholder until Saturday 3 adds persisted PRD/draft records.
+- Frontend is hosted on Vercel.
+- Backend is hosted on Railway.
+- Persistent database is Supabase PostgreSQL.
+- Railway backend connects to Supabase PostgreSQL through `DATABASE_URL`.
+- Use the Supabase pooler/IPv4-compatible connection string for Railway when direct IPv6 connectivity is unreliable.
+
+## Azure DevOps direction
+
+- Azure DevOps REST APIs remain the only external ALM integration for this pilot.
+- Pilot work item types are:
+  - Epic
+  - Issue
+- Workspace settings store the Azure DevOps organization URL, project, default repo, selected repo, selected PR, work item mapping, and default branch.
+- Preview before write remains mandatory for workflows that create or update Azure DevOps data.
+
+## Saturday 1 decisions
+
+- Added Supabase/Postgres persistence for the single workspace record.
+- Added live Azure DevOps repository loading from saved workspace settings.
+- Kept the existing Azure Functions backend structure instead of introducing a new backend framework.
+- Kept fake/demo behavior out of the pilot workspace and repo-loading flow.
+
+## Saturday 2 decisions
+
+- Extended workspace persistence with selected repository and last selected pull request.
+- Added recent pull request history.
+- Added live Azure DevOps pull request loading by repository.
+- Added dashboard-level repo and PR selectors.
+- Kept PR selection as an explicit save action so the PM can inspect the selection before persisting it.
+
+## Saturday 3 decisions
+
+- Added persisted PRD documents using the `prd_document` table.
+- Added persisted generated backlog drafts using the `backlog_draft` table.
+- Added normalized draft support tables:
+  - `backlog_item`
+  - `acceptance_criterion`
+  - `risk_item`
+- Kept the generated draft source as the current deterministic parser.
+- Did not add LLM orchestration, agent frameworks, embeddings, RAG, or editable draft behavior in Saturday 3.
+- Added `/prd` as the browser-first PRD paste/upload and analysis page.
+- Added saved draft reload using `/prd?draftId=<draft-id>`.

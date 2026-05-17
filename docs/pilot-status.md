@@ -1,39 +1,85 @@
-## Saturday 1 - Foundation: product shell, database, workspace setup
+# Pilot Status
 
-Status: complete.
+## Current milestone
 
-### Validated
+Saturday 3 complete: PRD upload and analyze.
 
-- Workspace settings save successfully from the Vercel browser UI.
-- Workspace settings persist in Supabase Postgres after refresh.
-- Railway backend connects to Supabase using the Supabase pooler connection string.
-- Vercel frontend calls Railway backend using `NEXT_PUBLIC_API_BASE_URL`.
-- Railway CORS is locked to the production Vercel origin.
-- Azure DevOps live repositories load from saved workspace settings.
-- Azure DevOps PAT was refreshed and validated for the `agentic-booth` organization.
+## Current branch target
 
-### Saturday 1 stop condition
+`pilot-03 prd upload and analyze`
 
-Complete: from the browser, workspace settings can be saved and live Azure DevOps repos can be loaded from saved workspace settings.
+## Completed
 
-## Saturday 2 - Saved project and PR context, home dashboard, PR selection
+### Saturday 1
 
-Status: implementation ready for hosted validation.
+- Created the browser-first workspace foundation.
+- Added workspace settings persistence.
+- Added live Azure DevOps repository loading from saved workspace settings.
+- Added frontend workspace form and repository test dropdown.
+- Added pilot docs.
 
-### Added
+### Saturday 2
 
-- Workspace persistence now stores selected repo ID/name and last used PR ID/title.
-- Recent PR selections are stored in `recent_pr` whenever a selected PR is saved.
-- `GET /repos/{repoId}/pull-requests` returns compact Azure DevOps PR summaries for UI selection.
-- Home dashboard now shows workspace summary, last used PR, last used PRD placeholder, quick actions, repo selector, PR selector, PR list, and recent PR history.
+- Extended workspace persistence with selected repo and last selected PR.
+- Added recent PR storage.
+- Added backend pull request listing by repository.
+- Added backend selection persistence.
+- Added dashboard repo selector.
+- Added dashboard PR selector.
+- Added recent PR display.
+- Confirmed repo and PR context can be selected from the browser and remembered after refresh.
 
-### Validation needed in hosted pilot
+### Saturday 3
 
-- Apply migration `src/db/migrations/0002_repo_pr_selection.sql` to Supabase.
-- Deploy Railway backend with the new route.
-- Deploy Vercel frontend with `NEXT_PUBLIC_API_BASE_URL` pointing to the Railway API base URL.
-- From the browser, select a repo, load PRs, select a PR, save it, refresh, and confirm the saved repo/PR remain selected.
+- Added `prd_document`, `backlog_draft`, `backlog_item`, `acceptance_criterion`, and `risk_item` database tables.
+- Added `POST /prds`.
+- Added `POST /prds/{id}/analyze`.
+- Added `GET /backlog/drafts/{id}`.
+- Stored raw PRD text in Supabase PostgreSQL.
+- Stored generated backlog draft JSON in Supabase PostgreSQL.
+- Stored normalized generated requirements, epics, issues, acceptance criteria, and risks.
+- Added `/prd` frontend page.
+- Added PRD paste box.
+- Added `.txt` and `.md` file upload support.
+- Added Analyze button.
+- Rendered generated requirements, epics, issues, acceptance criteria, and risks.
+- Added draft header with title, created time, status, and draft ID.
+- Added saved analyzed draft reload with `/prd?draftId=<draft-id>`.
+- Added recent PRD display on dashboard.
 
-### Saturday 2 stop condition
+## Validation checklist
 
-Pending hosted validation: repo and PR are selectable from the UI and remembered after refresh.
+### Saturday 1
+
+- Save workspace from browser: complete.
+- Reload browser and confirm persistence: complete.
+- Fetch live Azure DevOps repos: complete.
+
+### Saturday 2
+
+- Select repo from UI: complete.
+- List open/recent PRs for selected repo: complete.
+- Select PR and verify persistence after refresh: complete.
+
+### Saturday 3
+
+- Analyze a real PRD from the UI: ready for hosted validation.
+- Refresh the page and confirm draft persistence: ready for hosted validation using `/prd?draftId=<draft-id>`.
+- Verify draft data is stored in the database: ready for Supabase validation.
+
+## Hosted validation notes
+
+- Frontend target: Vercel.
+- Backend target: Railway.
+- Database target: Supabase PostgreSQL.
+- For Railway to Supabase connectivity, prefer the Supabase pooler connection string when IPv6 direct connection causes deployment/runtime connection failures.
+- Run `src/db/migrations/0003_prd_backlog_drafts.sql` in Supabase before testing the hosted PRD page.
+
+## Known gaps intentionally deferred
+
+- Editable backlog drafts are deferred to Saturday 5.
+- Azure DevOps backlog preview/create from saved draft is deferred to Saturday 5.
+- Ambiguity detection, confidence labels, and explicit/inferred tagging are deferred to Saturday 4.
+- RAG, pgvector, document ingestion, embeddings, and retrieval context are deferred to Saturday 6.
+- PR review browser page is deferred to Saturday 7.
+- Traceability page is deferred to Saturday 8.
