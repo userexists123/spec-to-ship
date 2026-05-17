@@ -80,11 +80,27 @@ Saturday 4 ready for deployment/test: trust layer v1 for generated backlog draft
 - Refresh page and confirm draft persistence: complete.
 - Verify draft data is stored in Supabase PostgreSQL: complete.
 
-### Saturday 4
+### Completed Saturday 4:
+- Added ambiguity detection for vague wording, mixed scope, unclear ownership, non-testable outcomes, and missing non-functional details.
+- Added explicit/inferred labels.
+- Added High/Medium/Low confidence scoring.
+- Added rationale/basis lines under generated items.
+- Persisted trust metadata in Supabase.
+- Added ambiguity panel on /prd.
+- Added trust metadata badges and visual highlighting.
+- Verified the ambiguity panel appears after analyzing a new PRD.
 
-- Use one vague PRD and confirm ambiguity warnings appear: pending hosted validation.
-- Use one clearer PRD and confirm fewer warnings: pending hosted validation.
-- Verify explicit/inferred and confidence labels look sensible to a PM: pending hosted validation.
+### What is working:
+- PRD analysis from browser.
+- Saved backlog draft reload.
+- Ambiguity warnings.
+- Explicit/Inferred badges.
+- Confidence badges.
+- Rationale lines.
+- Trust metadata persistence.
+
+### Next target:
+Saturday 5 - Editable backlog draft plus preview/create Azure DevOps items from UI.
 
 ## Hosted validation notes
 
