@@ -1,14 +1,16 @@
 import type { PullRequestChangesResponse, PullRequestContextResponse } from "../schemas/pr";
 import type {
   PullRequestReviewDraft,
+  ReviewConfidence,
   ReviewCriterionAssessment,
   ReviewCriterionStatus,
   ReviewFinding
 } from "../schemas/review";
 
 export interface ReviewWorkItemInput {
-  id: number;
+  id: number | null;
   title: string;
+  localBacklogItemId: string;
   requirementIds: string[];
   acceptanceCriteria: Array<{
     id: string;
@@ -47,7 +49,14 @@ const STOP_WORDS = new Set([
   "can",
   "user",
   "users",
-  "system"
+  "system",
+  "pm",
+  "page",
+  "show",
+  "shows",
+  "able",
+  "when",
+  "given"
 ]);
 
 function normalizeText(value: string): string {
@@ -69,15 +78,42 @@ function toEvidenceLine(path: string, summary: string): string {
   return `${path}: ${summary}`;
 }
 
+function missingEvidenceFor(status: ReviewCriterionStatus, criterionTokens: string[]): string[] {
+  if (status === "met" || status === "not_applicable") {
+    return [];
+  }
+
+  const importantTokens = criterionTokens.slice(0, 5);
+
+  if (importantTokens.length === 0) {
+    return ["No clear testable keywords were found in the acceptance criterion."];
+  }
+
+  return [`No direct changed-file evidence was found for: ${importantTokens.join(", ")}.`];
+}
+
 function classifyCriterion(
   criterion: string,
   changes: PullRequestChangesResponse
 ): {
   status: ReviewCriterionStatus;
   evidence: string[];
-  note: string;
+  missingEvidence: string[];
+  rationale: string;
+  confidence: ReviewConfidence;
 } {
   const criterionTokens = unique(tokenize(criterion));
+
+  if (criterionTokens.length === 0) {
+    return {
+      status: "not_applicable",
+      evidence: [],
+      missingEvidence: ["Criterion text is too vague to map to changed files."],
+      rationale: "The criterion did not contain enough specific terms for evidence matching.",
+      confidence: "Low"
+    };
+  }
+
   const scoredMatches = changes.files
     .map((file) => {
       const haystack = normalizeText(`${file.path} ${file.summary}`);
@@ -85,6 +121,7 @@ function classifyCriterion(
 
       return {
         file,
+        matchedTokens,
         score: matchedTokens.length
       };
     })
@@ -92,31 +129,47 @@ function classifyCriterion(
     .sort((left, right) => right.score - left.score);
 
   const evidence = scoredMatches
-    .slice(0, 3)
-    .map((entry) => toEvidenceLine(entry.file.path, entry.file.summary));
+    .slice(0, 4)
+    .map((entry) => `${toEvidenceLine(entry.file.path, entry.file.summary)} Matched: ${entry.matchedTokens.join(", ")}.`);
 
   if (scoredMatches.length === 0) {
     return {
       status: "not_evident",
       evidence: [],
-      note: "No changed file or summary point clearly supports this criterion."
+      missingEvidence: missingEvidenceFor("not_evident", criterionTokens),
+      rationale: "No changed file path or change summary clearly supports this acceptance criterion.",
+      confidence: "Medium"
     };
   }
 
   const best = scoredMatches[0];
 
-  if (best.score >= 2) {
+  if (best.score >= 3) {
     return {
       status: "met",
       evidence,
-      note: "PR changes contain direct evidence that maps to this criterion."
+      missingEvidence: [],
+      rationale: "PR changed-file evidence contains multiple terms that directly map to this criterion.",
+      confidence: "High"
+    };
+  }
+
+  if (best.score >= 2) {
+    return {
+      status: "partial",
+      evidence,
+      missingEvidence: missingEvidenceFor("partial", criterionTokens),
+      rationale: "PR changed-file evidence is related, but not strong enough to mark the criterion fully met.",
+      confidence: "Medium"
     };
   }
 
   return {
     status: "partial",
     evidence,
-    note: "There is some related evidence, but coverage is not strong enough to mark fully met."
+    missingEvidence: missingEvidenceFor("partial", criterionTokens),
+    rationale: "A weak file-level signal was found, but evidence is indirect.",
+    confidence: "Low"
   };
 }
 
@@ -124,8 +177,9 @@ function buildSummary(checklist: ReviewCriterionAssessment[]): string {
   const met = checklist.filter((item) => item.status === "met").length;
   const partial = checklist.filter((item) => item.status === "partial").length;
   const notEvident = checklist.filter((item) => item.status === "not_evident").length;
+  const notApplicable = checklist.filter((item) => item.status === "not_applicable").length;
 
-  return `Reviewed ${checklist.length} acceptance criteria: ${met} met, ${partial} partial, ${notEvident} not evident.`;
+  return `Reviewed ${checklist.length} acceptance criteria: ${met} met, ${partial} partial, ${notEvident} not evident, ${notApplicable} not applicable.`;
 }
 
 function buildScopeCreepNotes(
@@ -158,10 +212,10 @@ function buildScopeCreepNotes(
         path.includes("/scripts")
       );
     })
-    .slice(0, 3)
+    .slice(0, 5)
     .map(
       (file) =>
-        `Changed ${file.path} but it does not map clearly to the linked acceptance criteria.`
+        `Changed ${file.path}, but it does not map clearly to the linked acceptance criteria.`
     );
 }
 
@@ -171,17 +225,24 @@ function buildFindings(
 ): ReviewFinding[] {
   const findings: ReviewFinding[] = [];
 
-  for (const item of checklist.filter((entry) => entry.status === "met").slice(0, 2)) {
+  for (const item of checklist.filter((entry) => entry.status === "met").slice(0, 3)) {
     findings.push({
       type: "strength",
-      message: `${item.criterionId} looks implemented based on ${item.evidence[0] ?? "the changed files"}.`
+      message: `${item.criterionId} looks supported by PR evidence.`
     });
   }
 
-  for (const item of checklist.filter((entry) => entry.status !== "met").slice(0, 3)) {
+  for (const item of checklist.filter((entry) => entry.status === "partial").slice(0, 3)) {
     findings.push({
       type: "gap",
-      message: `${item.criterionId} is ${item.status.replace("_", " ")}. ${item.note}`
+      message: `${item.criterionId} is partial. ${item.rationale}`
+    });
+  }
+
+  for (const item of checklist.filter((entry) => entry.status === "not_evident").slice(0, 3)) {
+    findings.push({
+      type: "gap",
+      message: `${item.criterionId} is not evident. ${item.rationale}`
     });
   }
 
@@ -192,14 +253,14 @@ function buildFindings(
     });
   }
 
-  return findings.slice(0, 6);
+  return findings.slice(0, 8);
 }
 
 function buildFollowUps(checklist: ReviewCriterionAssessment[]): string[] {
   return checklist
-    .filter((item) => item.status !== "met")
-    .slice(0, 3)
-    .map((item) => `Recheck ${item.criterionId} with more explicit evidence or tests.`);
+    .filter((item) => item.status !== "met" && item.status !== "not_applicable")
+    .slice(0, 5)
+    .map((item) => `Recheck ${item.criterionId}: ${item.missingEvidence[0] || item.rationale}`);
 }
 
 export function generateReviewDraft(params: {
@@ -218,11 +279,14 @@ export function generateReviewDraft(params: {
         storyId: criterion.storyId,
         workItemId: workItem.id,
         workItemTitle: workItem.title,
+        localBacklogItemId: workItem.localBacklogItemId,
         requirementIds: workItem.requirementIds,
         criterion: criterion.text,
         status: classification.status,
         evidence: classification.evidence,
-        note: classification.note
+        missingEvidence: classification.missingEvidence,
+        rationale: classification.rationale,
+        confidence: classification.confidence
       };
     })
   );
@@ -234,7 +298,9 @@ export function generateReviewDraft(params: {
     repoId: context.repoId,
     prId: context.prId,
     summary: buildSummary(checklist),
-    linkedWorkItemIds: workItems.map((item) => item.id),
+    linkedWorkItemIds: workItems
+      .map((item) => item.id)
+      .filter((id): id is number => typeof id === "number"),
     requirementIds,
     checklist,
     findings: buildFindings(checklist, possibleScopeCreep),

@@ -406,7 +406,7 @@ export class AzureDevOpsClient {
   ): Promise<AzureDevOpsPullRequestWorkItemRef[]> {
     if (this.demoMode) {
       const fixture = await readDemoPrContext();
-      return fixture.workItems.map((workItem) => ({
+      return (fixture.workItems ?? []).map((workItem) => ({
         id: String(workItem.id),
         url: workItem.url
       }));

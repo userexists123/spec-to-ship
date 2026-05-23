@@ -1,42 +1,64 @@
-export interface PullRequestLinkedWorkItem {
-  id: number;
-  url?: string;
-  title?: string;
+export interface PullRequestSummary {
+  prId: number;
+  title: string;
+  status: string;
+  author: string;
+  sourceBranch: string;
+  targetBranch: string;
+  url: string;
 }
 
-export interface PullRequestAuthor {
-  displayName?: string;
-  uniqueName?: string;
+export interface DemoPullRequestWorkItemRef {
+  id: number;
+  url: string;
+  title?: string;
 }
 
 export interface PullRequestContextResponse {
   repoId: string;
+  repoName?: string;
   prId: number;
-  title: string;
-  description: string;
-  status: string;
+
+  /**
+   * Saturday 7 normalized fields.
+   */
+  prTitle?: string;
+  prStatus?: string;
+  prAuthor?: string;
+  sourceBranch?: string;
+  targetBranch?: string;
+  prUrl?: string;
+  linkedWorkItemIds?: number[];
+
+  /**
+   * Backward-compatible fields used by the existing AzureDevOpsClient/demo fixtures.
+   */
+  title?: string;
+  description?: string;
+  status?: string;
   sourceRefName?: string;
   targetRefName?: string;
-  createdBy?: PullRequestAuthor;
-  workItems: PullRequestLinkedWorkItem[];
-  abReferences: number[];
+  createdBy?: {
+    displayName?: string;
+    uniqueName?: string;
+  };
+  workItems?: DemoPullRequestWorkItemRef[];
 }
 
-export interface PullRequestFileChangeSummary {
+export interface PullRequestChangedFile {
   path: string;
   changeType: string;
-  additions?: number;
-  deletions?: number;
-  isBinary?: boolean;
   summary: string;
+  isBinary?: boolean;
 }
 
 export interface PullRequestChangesResponse {
   repoId: string;
   prId: number;
+  files: PullRequestChangedFile[];
+
+  /**
+   * Backward-compatible field used by the existing AzureDevOpsClient demo change fixture.
+   */
   iterationId?: number;
-  fileCount: number;
-  returnedFileCount: number;
-  truncated: boolean;
-  files: PullRequestFileChangeSummary[];
 }

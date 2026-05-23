@@ -16,23 +16,37 @@ function toStatusLabel(status: ReviewCriterionAssessment["status"]): string {
       return "Partial";
     case "not_evident":
       return "Not evident";
+    case "not_applicable":
+      return "Not applicable";
     default:
       return status;
   }
 }
 
 function formatChecklistItem(item: ReviewCriterionAssessment): string {
-  const parts = [
-    `- ${item.criterionId} (${toStatusLabel(item.status)}): ${item.criterion}`
+  const lines = [
+    `- ${item.criterionId} (${toStatusLabel(item.status)}, ${item.confidence} confidence): ${item.criterion}`
   ];
 
-  if (item.evidence.length > 0) {
-    parts.push(`  Evidence: ${item.evidence.join("; ")}`);
+  if (item.localBacklogItemId) {
+    lines.push(`  Local item: ${item.localBacklogItemId}`);
   }
 
-  parts.push(`  Note: ${item.note}`);
+  if (item.workItemId) {
+    lines.push(`  Azure DevOps work item: ${item.workItemId}`);
+  }
 
-  return parts.join("\n");
+  if (item.evidence.length > 0) {
+    lines.push(`  Evidence: ${item.evidence.join("; ")}`);
+  }
+
+  if (item.missingEvidence.length > 0) {
+    lines.push(`  Missing evidence: ${item.missingEvidence.join("; ")}`);
+  }
+
+  lines.push(`  Rationale: ${item.rationale}`);
+
+  return lines.join("\n");
 }
 
 function formatFindings(findings: ReviewFinding[]): string[] {
@@ -53,10 +67,10 @@ function formatFollowUps(followUps: string[]): string[] {
 
 export function formatPrReviewComment(review: PullRequestReviewDraft, runId: string): string {
   const lines: string[] = [
-    toHeading("Summary"),
+    toHeading("Spec-to-Ship PR readiness summary"),
     review.summary,
     "",
-    toHeading("Acceptance criteria")
+    toHeading("Acceptance criteria evidence")
   ];
 
   if (review.checklist.length === 0) {
@@ -72,7 +86,7 @@ export function formatPrReviewComment(review: PullRequestReviewDraft, runId: str
     toHeading("Findings"),
     ...formatFindings(review.findings),
     "",
-    toHeading("Follow-up actions"),
+    toHeading("Recommended next steps"),
     ...formatFollowUps(review.followUps),
     "",
     `run_id: ${runId}`

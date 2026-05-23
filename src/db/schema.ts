@@ -1,4 +1,13 @@
-import { boolean, integer, jsonb, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import {
+  boolean,
+  doublePrecision,
+  integer,
+  jsonb,
+  pgTable,
+  text,
+  timestamp,
+  uuid
+} from "drizzle-orm/pg-core";
 
 export const workspace = pgTable("workspace", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -159,7 +168,58 @@ export const draftRetrievalSource = pgTable("draft_retrieval_source", {
   sourceType: text("source_type").notNull(),
   title: text("title").notNull(),
   excerpt: text("excerpt").notNull(),
-  similarity: integer("similarity").notNull(),
+  similarity: doublePrecision("similarity").notNull(),
   rank: integer("rank").notNull(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+});
+
+export const prReviewRun = pgTable("pr_review_run", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  repoId: text("repo_id").notNull(),
+  repoName: text("repo_name").notNull().default(""),
+  prId: integer("pr_id").notNull(),
+  prTitle: text("pr_title").notNull().default(""),
+  prStatus: text("pr_status").notNull().default(""),
+  prAuthor: text("pr_author").notNull().default(""),
+  sourceBranch: text("source_branch").notNull().default(""),
+  targetBranch: text("target_branch").notNull().default(""),
+  prUrl: text("pr_url").notNull().default(""),
+  reviewStatus: text("review_status").notNull().default("generated"),
+  summary: text("summary").notNull().default(""),
+  linkedWorkItemIds: jsonb("linked_work_item_ids").notNull().default([]),
+  changedFiles: jsonb("changed_files").notNull().default([]),
+  commentPreview: text("comment_preview"),
+  commentPosted: boolean("comment_posted").notNull().default(false),
+  commentThreadId: integer("comment_thread_id"),
+  commentUrl: text("comment_url"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
+});
+
+export const reviewAssessment = pgTable("review_assessment", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  reviewRunId: uuid("review_run_id").notNull().references(() => prReviewRun.id, { onDelete: "cascade" }),
+  workItemId: integer("work_item_id"),
+  workItemTitle: text("work_item_title").notNull().default(""),
+  localBacklogItemId: text("local_backlog_item_id").notNull().default(""),
+  acceptanceCriterionId: text("acceptance_criterion_id").notNull(),
+  acceptanceCriterionText: text("acceptance_criterion_text").notNull(),
+  status: text("status").notNull(),
+  evidence: jsonb("evidence").notNull().default([]),
+  missingEvidence: jsonb("missing_evidence").notNull().default([]),
+  rationale: text("rationale").notNull().default(""),
+  confidence: text("confidence").notNull().default("Low"),
+  requirementIds: jsonb("requirement_ids").notNull().default([]),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+});
+
+export const commentPosting = pgTable("comment_posting", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  reviewRunId: uuid("review_run_id").notNull().references(() => prReviewRun.id, { onDelete: "cascade" }),
+  repoId: text("repo_id").notNull(),
+  prId: integer("pr_id").notNull(),
+  commentBody: text("comment_body").notNull(),
+  threadId: integer("thread_id").notNull(),
+  threadUrl: text("thread_url").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
 });
