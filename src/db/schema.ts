@@ -1,4 +1,4 @@
-import { integer, jsonb, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { boolean, integer, jsonb, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
 
 export const workspace = pgTable("workspace", {
   id: uuid("id").primaryKey().defaultRandom(),
@@ -48,6 +48,10 @@ export const backlogDraft = pgTable("backlog_draft", {
   status: text("status").notNull().default("generated"),
   draftJson: jsonb("draft_json").notNull(),
   ambiguityWarnings: jsonb("ambiguity_warnings").notNull().default([]),
+  previewJson: jsonb("preview_json"),
+  executionJson: jsonb("execution_json"),
+  lastPreviewedAt: timestamp("last_previewed_at", { withTimezone: true }),
+  lastExecutedAt: timestamp("last_executed_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
 });
@@ -68,7 +72,9 @@ export const backlogItem = pgTable("backlog_item", {
   rationale: text("rationale").notNull().default(""),
   warnings: jsonb("warnings").notNull().default([]),
   sortOrder: integer("sort_order").notNull().default(0),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+  isDeleted: boolean("is_deleted").notNull().default(false),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
 });
 
 export const acceptanceCriterion = pgTable("acceptance_criterion", {
@@ -82,7 +88,9 @@ export const acceptanceCriterion = pgTable("acceptance_criterion", {
   rationale: text("rationale").notNull().default(""),
   warnings: jsonb("warnings").notNull().default([]),
   sortOrder: integer("sort_order").notNull().default(0),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+  isDeleted: boolean("is_deleted").notNull().default(false),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
 });
 
 export const riskItem = pgTable("risk_item", {
@@ -98,5 +106,21 @@ export const riskItem = pgTable("risk_item", {
   rationale: text("rationale").notNull().default(""),
   warnings: jsonb("warnings").notNull().default([]),
   sortOrder: integer("sort_order").notNull().default(0),
+  isDeleted: boolean("is_deleted").notNull().default(false),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
+});
+
+export const workItemMapping = pgTable("work_item_mapping", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  draftId: uuid("draft_id").notNull().references(() => backlogDraft.id, { onDelete: "cascade" }),
+  runId: text("run_id").notNull(),
+  localId: text("local_id").notNull(),
+  workItemType: text("work_item_type").notNull(),
+  adoWorkItemId: integer("ado_work_item_id").notNull(),
+  adoUrl: text("ado_url").notNull(),
+  parentLocalId: text("parent_local_id"),
+  parentAdoWorkItemId: integer("parent_ado_work_item_id"),
+  requirementIds: jsonb("requirement_ids").notNull().default([]),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
 });

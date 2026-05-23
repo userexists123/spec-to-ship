@@ -89,12 +89,71 @@ export interface PrdDocumentRecord {
   updatedAt: string;
 }
 
+export interface WorkItemMappingRecord {
+  id: string;
+  draftId: string;
+  runId: string;
+  localId: string;
+  workItemType: string;
+  adoWorkItemId: number;
+  adoUrl: string;
+  parentLocalId: string | null;
+  parentAdoWorkItemId: number | null;
+  requirementIds: string[];
+  createdAt: string;
+}
+
+export interface PreviewItem {
+  localId: string;
+  parentLocalId?: string;
+  workItemType: string;
+  title: string;
+  description: string;
+  requirementIds: string[];
+  patch: Array<{
+    op: "add";
+    path: string;
+    value: unknown;
+  }>;
+}
+
+export interface BacklogPreview {
+  runId: string;
+  project: string;
+  itemCount: number;
+  epicCount: number;
+  issueCount: number;
+  items: PreviewItem[];
+}
+
+export interface ExecutionItem {
+  localId: string;
+  workItemType: string;
+  adoWorkItemId: number;
+  adoUrl: string;
+  parentLocalId: string | null;
+  parentAdoWorkItemId: number | null;
+  requirementIds: string[];
+}
+
+export interface BacklogExecutionResult {
+  runId: string;
+  project: string;
+  createdCount: number;
+  createdItems: ExecutionItem[];
+}
+
 export interface BacklogDraftRecord {
   id: string;
   prdDocumentId: string;
   title: string;
   status: string;
   draft: BacklogBundle;
+  preview: BacklogPreview | null;
+  execution: BacklogExecutionResult | null;
+  lastPreviewedAt: string | null;
+  lastExecutedAt: string | null;
+  mappings: WorkItemMappingRecord[];
   createdAt: string;
   updatedAt: string;
 }
