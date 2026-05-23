@@ -8,12 +8,6 @@ export interface PullRequestSummary {
   url: string;
 }
 
-export interface AbReference {
-  id: number;
-  title: string;
-  url?: string;
-}
-
 export interface DemoPullRequestWorkItemRef {
   id: number;
   url?: string;
@@ -48,8 +42,14 @@ export interface PullRequestContextResponse {
     displayName?: string;
     uniqueName?: string;
   };
+
   workItems: DemoPullRequestWorkItemRef[];
-  abReferences: AbReference[];
+
+  /**
+   * Earlier routes treat AB references as numeric work item IDs.
+   * Keep this as number[] for compatibility.
+   */
+  abReferences: number[];
 }
 
 export interface PullRequestChangedFile {
@@ -60,7 +60,7 @@ export interface PullRequestChangedFile {
 }
 
 export interface PullRequestFileChangeSummary extends PullRequestChangedFile {
-  isBinary: boolean;
+  isBinary?: boolean;
 }
 
 export interface PullRequestChangesResponse {
