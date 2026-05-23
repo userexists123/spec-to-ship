@@ -1,6 +1,7 @@
 import { BacklogBundle, TrustMetadata } from "../schemas/backlog";
 import { PoolClient } from "pg";
 import { getPgPool } from "./database";
+import { RetrievedContextSource } from "./ragStore";
 
 export interface PrdDocumentRecord {
   id: string;
@@ -68,6 +69,7 @@ export interface BacklogDraftRecord {
   draft: BacklogBundle;
   preview: BacklogPreviewRecord | null;
   execution: BacklogExecutionRecord | null;
+  retrievedSources: RetrievedContextSource[];
   lastPreviewedAt: string | null;
   lastExecutedAt: string | null;
   mappings: WorkItemMappingRecord[];
@@ -134,6 +136,10 @@ function asExecution(value: unknown): BacklogExecutionRecord | null {
   return value ? (value as BacklogExecutionRecord) : null;
 }
 
+function asRetrievedSources(value: unknown): RetrievedContextSource[] {
+  return Array.isArray(value) ? (value as RetrievedContextSource[]) : [];
+}
+
 function asStringArray(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 }
@@ -173,7 +179,23 @@ function mapWorkItemMapping(row: Record<string, unknown>): WorkItemMappingRecord
   };
 }
 
-function mapBacklogDraft(row: Record<string, unknown>, mappings: WorkItemMappingRecord[] = []): BacklogDraftRecord {
+function mapRetrievedSource(row: Record<string, unknown>): RetrievedContextSource {
+  return {
+    sourceDocumentId: asString(row.source_document_id),
+    sourceChunkId: asString(row.source_chunk_id),
+    sourceType: row.source_type as RetrievedContextSource["sourceType"],
+    title: asString(row.title),
+    excerpt: asString(row.excerpt),
+    similarity: asNumber(row.similarity),
+    rank: asNumber(row.rank)
+  };
+}
+
+function mapBacklogDraft(
+  row: Record<string, unknown>,
+  mappings: WorkItemMappingRecord[] = [],
+  retrievedSources?: RetrievedContextSource[]
+): BacklogDraftRecord {
   return {
     id: asString(row.id),
     prdDocumentId: asString(row.prd_document_id),
@@ -182,6 +204,7 @@ function mapBacklogDraft(row: Record<string, unknown>, mappings: WorkItemMapping
     draft: asBacklogBundle(row.draft_json),
     preview: asPreview(row.preview_json),
     execution: asExecution(row.execution_json),
+    retrievedSources: retrievedSources ?? asRetrievedSources(row.retrieved_context_json),
     lastPreviewedAt: asNullableIsoString(row.last_previewed_at),
     lastExecutedAt: asNullableIsoString(row.last_executed_at),
     mappings,
@@ -413,31 +436,67 @@ async function replaceNormalizedDraftRows(client: PoolClient, draftId: string, b
   }
 }
 
+async function insertDraftRetrievalSources(
+  client: PoolClient,
+  draftId: string,
+  retrievedSources: RetrievedContextSource[]
+): Promise<void> {
+  await client.query(`delete from draft_retrieval_source where draft_id = $1`, [draftId]);
+
+  for (const source of retrievedSources) {
+    await client.query(
+      `insert into draft_retrieval_source (
+         draft_id,
+         source_document_id,
+         source_chunk_id,
+         source_type,
+         title,
+         excerpt,
+         similarity,
+         rank
+       ) values ($1, $2, $3, $4, $5, $6, $7, $8)`,
+      [
+        draftId,
+        source.sourceDocumentId,
+        source.sourceChunkId,
+        source.sourceType,
+        source.title,
+        source.excerpt,
+        source.similarity,
+        source.rank
+      ]
+    );
+  }
+}
+
 export async function createGeneratedDraft(input: {
   prdDocumentId: string;
   backlog: BacklogBundle;
+  retrievedSources?: RetrievedContextSource[];
 }): Promise<BacklogDraftRecord> {
   const pool = getPgPool();
   const client = await pool.connect();
+  const retrievedSources = input.retrievedSources || [];
 
   try {
     await client.query("begin");
 
     const result = await client.query(
       `insert into backlog_draft (
-         prd_document_id, title, status, draft_json, ambiguity_warnings
-       ) values ($1, $2, 'generated', $3::jsonb, $4::jsonb)
+         prd_document_id, title, status, draft_json, ambiguity_warnings, retrieved_context_json
+       ) values ($1, $2, 'generated', $3::jsonb, $4::jsonb, $5::jsonb)
        returning id, prd_document_id, title, status, draft_json, preview_json, execution_json,
-                 last_previewed_at, last_executed_at, created_at, updated_at`,
+                 retrieved_context_json, last_previewed_at, last_executed_at, created_at, updated_at`,
       [
         input.prdDocumentId,
         input.backlog.title,
         JSON.stringify(input.backlog),
-        JSON.stringify(input.backlog.ambiguity_warnings)
+        JSON.stringify(input.backlog.ambiguity_warnings),
+        JSON.stringify(retrievedSources)
       ]
     );
 
-    const draft = mapBacklogDraft(result.rows[0]);
+    const draft = mapBacklogDraft(result.rows[0], [], retrievedSources);
 
     await client.query(
       `insert into recent_prd (prd_id, title)
@@ -446,6 +505,7 @@ export async function createGeneratedDraft(input: {
     );
 
     await replaceNormalizedDraftRows(client, draft.id, input.backlog);
+    await insertDraftRetrievalSources(client, draft.id, retrievedSources);
     await client.query("commit");
 
     return draft;
@@ -462,7 +522,7 @@ export async function getBacklogDraft(id: string): Promise<BacklogDraftRecord | 
 
   const draftResult = await pool.query(
     `select id, prd_document_id, title, status, draft_json, preview_json, execution_json,
-            last_previewed_at, last_executed_at, created_at, updated_at
+            retrieved_context_json, last_previewed_at, last_executed_at, created_at, updated_at
      from backlog_draft
      where id = $1
      limit 1`,
@@ -482,7 +542,20 @@ export async function getBacklogDraft(id: string): Promise<BacklogDraftRecord | 
     [id]
   );
 
-  return mapBacklogDraft(draftResult.rows[0], mappingResult.rows.map(mapWorkItemMapping));
+  const retrievalResult = await pool.query(
+    `select source_document_id, source_chunk_id, source_type, title, excerpt, similarity, rank
+     from draft_retrieval_source
+     where draft_id = $1
+     order by rank asc`,
+    [id]
+  );
+
+  const retrievedSources =
+    retrievalResult.rows.length > 0
+      ? retrievalResult.rows.map(mapRetrievedSource)
+      : asRetrievedSources(draftResult.rows[0].retrieved_context_json);
+
+  return mapBacklogDraft(draftResult.rows[0], mappingResult.rows.map(mapWorkItemMapping), retrievedSources);
 }
 
 export async function updateBacklogDraft(input: {
@@ -520,7 +593,7 @@ export async function updateBacklogDraft(input: {
            updated_at = now()
        where id = $1
        returning id, prd_document_id, title, status, draft_json, preview_json, execution_json,
-                 last_previewed_at, last_executed_at, created_at, updated_at`,
+                 retrieved_context_json, last_previewed_at, last_executed_at, created_at, updated_at`,
       [input.draftId, input.backlog.title, JSON.stringify(input.backlog), JSON.stringify(input.backlog.ambiguity_warnings)]
     );
 

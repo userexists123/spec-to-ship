@@ -50,6 +50,7 @@ export const backlogDraft = pgTable("backlog_draft", {
   ambiguityWarnings: jsonb("ambiguity_warnings").notNull().default([]),
   previewJson: jsonb("preview_json"),
   executionJson: jsonb("execution_json"),
+  retrievedContextJson: jsonb("retrieved_context_json").notNull().default([]),
   lastPreviewedAt: timestamp("last_previewed_at", { withTimezone: true }),
   lastExecutedAt: timestamp("last_executed_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -122,5 +123,43 @@ export const workItemMapping = pgTable("work_item_mapping", {
   parentLocalId: text("parent_local_id"),
   parentAdoWorkItemId: integer("parent_ado_work_item_id"),
   requirementIds: jsonb("requirement_ids").notNull().default([]),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+});
+
+export const sourceDocument = pgTable("source_document", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  workspaceKey: text("workspace_key").notNull().default("single-pm-pilot"),
+  sourceType: text("source_type").notNull(),
+  title: text("title").notNull(),
+  content: text("content").notNull(),
+  externalUrl: text("external_url").notNull().default(""),
+  metadata: jsonb("metadata").notNull().default({}),
+  status: text("status").notNull().default("indexed"),
+  chunkCount: integer("chunk_count").notNull().default(0),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow()
+});
+
+export const sourceChunk = pgTable("source_chunk", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  sourceDocumentId: uuid("source_document_id").notNull().references(() => sourceDocument.id, { onDelete: "cascade" }),
+  chunkIndex: integer("chunk_index").notNull(),
+  content: text("content").notNull(),
+  tokenEstimate: integer("token_estimate").notNull().default(0),
+  embedding: text("embedding").notNull(),
+  metadata: jsonb("metadata").notNull().default({}),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
+});
+
+export const draftRetrievalSource = pgTable("draft_retrieval_source", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  draftId: uuid("draft_id").notNull().references(() => backlogDraft.id, { onDelete: "cascade" }),
+  sourceDocumentId: uuid("source_document_id").notNull().references(() => sourceDocument.id, { onDelete: "cascade" }),
+  sourceChunkId: uuid("source_chunk_id").notNull().references(() => sourceChunk.id, { onDelete: "cascade" }),
+  sourceType: text("source_type").notNull(),
+  title: text("title").notNull(),
+  excerpt: text("excerpt").notNull(),
+  similarity: integer("similarity").notNull(),
+  rank: integer("rank").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow()
 });

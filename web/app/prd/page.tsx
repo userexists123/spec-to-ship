@@ -11,7 +11,10 @@ import {
   Epic,
   PrdDocumentRecord,
   Requirement,
+  RetrievedContextSource,
   Risk,
+  SourceDocumentSummary,
+  SourceType,
   Story,
   TrustMetadata
 } from "../../types/backlog";
@@ -28,6 +31,7 @@ interface AnalyzePrdResponse {
   ok: boolean;
   prd?: PrdDocumentRecord;
   draft?: BacklogDraftRecord;
+  retrievedSources?: RetrievedContextSource[];
   error?: string;
 }
 
@@ -50,6 +54,18 @@ interface ExecuteResponse extends DraftResponse {
   result?: BacklogExecutionResult;
 }
 
+interface SourceListResponse {
+  ok: boolean;
+  sources?: SourceDocumentSummary[];
+  error?: string;
+}
+
+interface SourceCreateResponse {
+  ok: boolean;
+  source?: SourceDocumentSummary;
+  error?: string;
+}
+
 interface DraftViewState {
   prd: PrdDocumentRecord | null;
   draft: BacklogDraftRecord | null;
@@ -68,6 +84,14 @@ Support teams need a better way to manage customer issues.
 
 ## Dependencies
 - Depends on CRM data and notification services.`;
+
+const sourceTypeLabels: Record<SourceType, string> = {
+  prior_prd: "Prior PRD",
+  ado_work_item: "ADO work item",
+  accepted_backlog: "Accepted backlog",
+  architecture_doc: "Architecture doc",
+  convention_doc: "Convention doc"
+};
 
 function defaultTrust(rationale: string): TrustMetadata {
   return {
@@ -225,6 +249,203 @@ function SectionCard({ title, count, children }: { title: string; count: number;
   );
 }
 
+function RetrievedContextPanel({ sources }: { sources: RetrievedContextSource[] }) {
+  return (
+    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-semibold uppercase tracking-wide text-slate-500">RAG grounding</p>
+          <h2 className="mt-2 text-xl font-bold text-slate-950">Retrieved context</h2>
+          <p className="mt-2 text-sm leading-6 text-slate-600">
+            These indexed sources were retrieved during PRD analysis and persisted with this draft.
+          </p>
+        </div>
+        <Badge tone={sources.length > 0 ? "blue" : "amber"}>{sources.length} sources</Badge>
+      </div>
+
+      {sources.length > 0 ? (
+        <div className="mt-4 grid gap-3">
+          {sources.map((source) => (
+            <article key={`${source.sourceChunkId}-${source.rank}`} className="rounded-xl border border-blue-200 bg-blue-50 p-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge tone="blue">Rank {source.rank}</Badge>
+                <Badge>{sourceTypeLabels[source.sourceType]}</Badge>
+                <Badge>{Math.round(source.similarity * 100)}% similar</Badge>
+              </div>
+              <h3 className="mt-3 font-semibold text-slate-950">{source.title}</h3>
+              <p className="mt-2 line-clamp-4 text-sm leading-6 text-slate-700">{source.excerpt}</p>
+            </article>
+          ))}
+        </div>
+      ) : (
+        <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+          No indexed context was retrieved. Ingest source documents below, then analyze another PRD.
+        </div>
+      )}
+    </section>
+  );
+}
+
+function SourceIngestionPanel({
+  sources,
+  onSourceCreated
+}: {
+  sources: SourceDocumentSummary[];
+  onSourceCreated: (source: SourceDocumentSummary) => void;
+}) {
+  const [sourceType, setSourceType] = useState<SourceType>("prior_prd");
+  const [title, setTitle] = useState("");
+  const [externalUrl, setExternalUrl] = useState("");
+  const [content, setContent] = useState("");
+  const [isCreating, setIsCreating] = useState(false);
+  const [sourceError, setSourceError] = useState("");
+  const [sourceNotice, setSourceNotice] = useState("");
+
+  async function handleSourceFileChange(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+
+    if (!file) {
+      return;
+    }
+
+    if (!file.type.includes("text") && !file.name.endsWith(".md")) {
+      setSourceError("Upload a plain text or Markdown source file.");
+      return;
+    }
+
+    const text = await file.text();
+    setContent(text);
+
+    if (!title.trim()) {
+      setTitle(file.name.replace(/\.(txt|md)$/i, ""));
+    }
+  }
+
+  async function createSource(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setIsCreating(true);
+    setSourceError("");
+    setSourceNotice("");
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/rag/sources`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sourceType, title, externalUrl, content, metadata: { createdFrom: "prd_page" } })
+      });
+
+      if (!response.ok) {
+        throw new Error(await readError(response, "Could not ingest source."));
+      }
+
+      const data = (await response.json()) as SourceCreateResponse;
+
+      if (!data.ok || !data.source) {
+        throw new Error(data.error || "Could not ingest source.");
+      }
+
+      onSourceCreated(data.source);
+      setSourceNotice("Source indexed successfully.");
+      setTitle("");
+      setExternalUrl("");
+      setContent("");
+    } catch (error) {
+      setSourceError(error instanceof Error ? error.message : "Could not ingest source.");
+    } finally {
+      setIsCreating(false);
+    }
+  }
+
+  return (
+    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-semibold uppercase tracking-wide text-slate-500">RAG sources</p>
+          <h2 className="mt-2 text-xl font-bold text-slate-950">Ingest project context</h2>
+          <p className="mt-2 text-sm leading-6 text-slate-600">
+            Index prior PRDs, accepted backlog drafts, architecture docs, convention docs, or copied Azure DevOps item
+            text before analyzing a new PRD.
+          </p>
+        </div>
+        <Badge>{sources.length} indexed docs</Badge>
+      </div>
+
+      <form onSubmit={createSource} className="mt-4 grid gap-3">
+        <div>
+          <FieldLabel>Source type</FieldLabel>
+          <select
+            value={sourceType}
+            onChange={(event) => setSourceType(event.target.value as SourceType)}
+            className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-slate-500"
+          >
+            {Object.entries(sourceTypeLabels).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <FieldLabel>Title</FieldLabel>
+          <TextInput value={title} onChange={setTitle} />
+        </div>
+
+        <div>
+          <FieldLabel>External URL or reference</FieldLabel>
+          <TextInput value={externalUrl} onChange={setExternalUrl} />
+        </div>
+
+        <div>
+          <FieldLabel>Upload source text or Markdown</FieldLabel>
+          <input
+            type="file"
+            accept=".txt,.md,text/plain,text/markdown"
+            onChange={handleSourceFileChange}
+            className="mt-1 w-full rounded-lg border border-dashed border-slate-300 px-3 py-3 text-sm text-slate-600"
+          />
+        </div>
+
+        <div>
+          <FieldLabel>Source content</FieldLabel>
+          <TextArea value={content} onChange={setContent} rows={8} />
+        </div>
+
+        {sourceError ? (
+          <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">{sourceError}</div>
+        ) : null}
+        {sourceNotice ? (
+          <div className="rounded-xl border border-green-200 bg-green-50 p-3 text-sm text-green-800">{sourceNotice}</div>
+        ) : null}
+
+        <button
+          type="submit"
+          disabled={isCreating || !title.trim() || !content.trim()}
+          className="rounded-xl bg-slate-950 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
+        >
+          {isCreating ? "Indexing..." : "Index source"}
+        </button>
+      </form>
+
+      {sources.length > 0 ? (
+        <div className="mt-5 grid gap-2">
+          {sources.slice(0, 6).map((source) => (
+            <article key={source.id} className="rounded-xl border border-slate-200 p-3">
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge>{sourceTypeLabels[source.sourceType]}</Badge>
+                <Badge>{source.chunkCount} chunks</Badge>
+                <Badge tone={source.status === "indexed" ? "green" : "amber"}>{source.status}</Badge>
+              </div>
+              <h3 className="mt-2 text-sm font-semibold text-slate-950">{source.title}</h3>
+              <p className="mt-1 text-xs text-slate-500">{formatDateTime(source.createdAt)}</p>
+            </article>
+          ))}
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 function AmbiguityPanel({ warnings }: { warnings: DraftAmbiguityWarning[] }) {
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -274,6 +495,11 @@ function RequirementCard({ requirement }: { requirement: Requirement }) {
       </div>
       <h3 className="mt-3 font-semibold text-slate-950">{requirement.title}</h3>
       <p className="mt-2 text-sm leading-6 text-slate-600">{requirement.summary}</p>
+      {requirement.source_refs.length > 0 ? (
+        <div className="mt-3 rounded-lg bg-slate-50 p-3 text-xs leading-5 text-slate-600">
+          <span className="font-semibold">Basis:</span> {requirement.source_refs[0].section}
+        </div>
+      ) : null}
     </article>
   );
 }
@@ -613,12 +839,14 @@ export default function PrdPage() {
   const [prdText, setPrdText] = useState("");
   const [state, setState] = useState<DraftViewState>({ prd: null, draft: null });
   const [editableBacklog, setEditableBacklog] = useState<BacklogBundle | null>(null);
+  const [sources, setSources] = useState<SourceDocumentSummary[]>([]);
   const [approvalToken, setApprovalToken] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSavingDraft, setIsSavingDraft] = useState(false);
   const [isPreviewing, setIsPreviewing] = useState(false);
   const [isExecuting, setIsExecuting] = useState(false);
   const [isLoadingDraft, setIsLoadingDraft] = useState(false);
+  const [isLoadingSources, setIsLoadingSources] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [loadedDraftId, setLoadedDraftId] = useState("");
@@ -637,6 +865,32 @@ export default function PrdPage() {
     url.searchParams.set("draftId", nextDraft.id);
     window.history.replaceState(null, "", url.toString());
   }
+
+  useEffect(() => {
+    setIsLoadingSources(true);
+
+    fetch(`${API_BASE_URL}/rag/sources`)
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error(await readError(response, "Could not load RAG sources."));
+        }
+
+        return (await response.json()) as SourceListResponse;
+      })
+      .then((data) => {
+        if (!data.ok) {
+          throw new Error(data.error || "Could not load RAG sources.");
+        }
+
+        setSources(data.sources || []);
+      })
+      .catch(() => {
+        setSources([]);
+      })
+      .finally(() => {
+        setIsLoadingSources(false);
+      });
+  }, []);
 
   useEffect(() => {
     const draftId = getDraftIdFromUrl();
@@ -732,7 +986,11 @@ export default function PrdPage() {
       }
 
       applyDraft(analyzeData.draft, analyzeData.prd || createData.prd);
-      setNotice("Draft generated and loaded for editing.");
+      setNotice(
+        analyzeData.draft.retrievedSources.length > 0
+          ? `Draft generated with ${analyzeData.draft.retrievedSources.length} retrieved context sources.`
+          : "Draft generated. No indexed context was retrieved for this PRD."
+      );
     } catch (submitError) {
       setError(submitError instanceof Error ? submitError.message : "Could not analyze PRD.");
     } finally {
@@ -846,16 +1104,27 @@ export default function PrdPage() {
     <div className="space-y-8">
       <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
         <div className="max-w-3xl">
-          <p className="text-sm font-semibold uppercase tracking-wide text-slate-500">Saturday 5</p>
+          <p className="text-sm font-semibold uppercase tracking-wide text-slate-500">Saturday 6</p>
           <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-950">
-            Editable backlog draft and Azure DevOps creation
+            RAG-grounded backlog drafting
           </h1>
           <p className="mt-3 text-sm leading-6 text-slate-600">
-            Paste or upload a PRD, edit the generated Epic/Issue draft, preview the exact Azure DevOps items, then
-            create real work items from the browser.
+            Index project context, analyze a PRD, inspect retrieved sources, edit the generated Epic/Issue draft, then
+            preview and create Azure DevOps items.
           </p>
         </div>
       </section>
+
+      <SourceIngestionPanel
+        sources={sources}
+        onSourceCreated={(source) => setSources((current) => [source, ...current])}
+      />
+
+      {isLoadingSources ? (
+        <div className="rounded-xl border border-slate-200 bg-white p-4 text-sm text-slate-600">
+          Loading indexed sources...
+        </div>
+      ) : null}
 
       <section className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
         <form onSubmit={handleAnalyze} className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -921,7 +1190,7 @@ export default function PrdPage() {
               disabled={!canAnalyze}
               className="rounded-xl bg-slate-950 px-4 py-2 text-sm font-semibold text-white disabled:cursor-not-allowed disabled:bg-slate-300"
             >
-              {isSubmitting ? "Analyzing..." : "Analyze PRD"}
+              {isSubmitting ? "Analyzing with retrieval..." : "Analyze PRD with RAG"}
             </button>
             <span className="text-sm text-slate-500">{prdText.trim().length.toLocaleString()} characters</span>
           </div>
@@ -942,6 +1211,14 @@ export default function PrdPage() {
                   <dt className="font-medium text-slate-500">Status</dt>
                   <dd className="mt-1">
                     <Badge>{draft.status}</Badge>
+                  </dd>
+                </div>
+                <div>
+                  <dt className="font-medium text-slate-500">Retrieved sources</dt>
+                  <dd className="mt-1">
+                    <Badge tone={draft.retrievedSources.length > 0 ? "blue" : "amber"}>
+                      {draft.retrievedSources.length}
+                    </Badge>
                   </dd>
                 </div>
                 <div>
@@ -969,7 +1246,7 @@ export default function PrdPage() {
               </dl>
             ) : (
               <p className="mt-3 text-sm leading-6 text-slate-600">
-                No draft loaded yet. Paste or upload a PRD and click Analyze.
+                No draft loaded yet. Index sources, then paste or upload a PRD and click Analyze.
               </p>
             )}
           </div>
@@ -1083,6 +1360,8 @@ export default function PrdPage() {
 
       {draft && editableBacklog ? (
         <section className="space-y-4">
+          <RetrievedContextPanel sources={draft.retrievedSources} />
+
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
             <p className="text-sm font-semibold uppercase tracking-wide text-slate-500">Editable backlog draft</p>
             <h2 className="mt-2 text-2xl font-bold text-slate-950">{editableBacklog.title}</h2>

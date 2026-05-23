@@ -81,6 +81,34 @@ export interface BacklogBundle {
   ambiguity_warnings: DraftAmbiguityWarning[];
 }
 
+export type SourceType =
+  | "prior_prd"
+  | "ado_work_item"
+  | "accepted_backlog"
+  | "architecture_doc"
+  | "convention_doc";
+
+export interface SourceDocumentSummary {
+  id: string;
+  sourceType: SourceType;
+  title: string;
+  externalUrl: string;
+  status: string;
+  chunkCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface RetrievedContextSource {
+  sourceDocumentId: string;
+  sourceChunkId: string;
+  sourceType: SourceType;
+  title: string;
+  excerpt: string;
+  similarity: number;
+  rank: number;
+}
+
 export interface PrdDocumentRecord {
   id: string;
   title: string;
@@ -151,6 +179,7 @@ export interface BacklogDraftRecord {
   draft: BacklogBundle;
   preview: BacklogPreview | null;
   execution: BacklogExecutionResult | null;
+  retrievedSources: RetrievedContextSource[];
   lastPreviewedAt: string | null;
   lastExecutedAt: string | null;
   mappings: WorkItemMappingRecord[];

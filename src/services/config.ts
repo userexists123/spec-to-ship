@@ -26,6 +26,18 @@ function parseBooleanEnv(defaultValue: boolean, ...names: string[]): boolean {
   return parseBoolean(value);
 }
 
+function parseIntegerEnv(defaultValue: number, ...names: string[]): number {
+  const value = readFirstDefinedEnv(...names);
+
+  if (!value) {
+    return defaultValue;
+  }
+
+  const parsed = Number(value);
+
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : defaultValue;
+}
+
 function resolveAuditLogPath(): string {
   const explicitPath = readFirstDefinedEnv("AUDIT_LOG_PATH", "STS_AUDIT_LOG_PATH");
 
@@ -74,6 +86,10 @@ export function getAppConfig() {
         "APPROVAL_TOKEN",
         "STS_EXECUTE_APPROVAL_TOKEN"
       ) || "",
+    openaiApiKey: readFirstDefinedEnv("OPENAI_API_KEY"),
+    openaiEmbeddingModel:
+      readFirstDefinedEnv("OPENAI_EMBEDDING_MODEL", "EMBEDDING_MODEL") || "text-embedding-3-small",
+    ragMatchCount: parseIntegerEnv(6, "RAG_MATCH_COUNT", "STS_RAG_MATCH_COUNT"),
     auditLogPath: resolveAuditLogPath(),
     defaultPrdPath:
       readFirstDefinedEnv("DEFAULT_PRD_PATH", "STS_DEFAULT_PRD_PATH") ||

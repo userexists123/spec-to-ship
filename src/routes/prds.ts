@@ -8,6 +8,10 @@ import {
   getPrdDocument,
   parsePrdCreateBody
 } from "../services/prdStore";
+import {
+  groundBacklogWithRetrievedContext,
+  retrieveContextForPrd
+} from "../services/ragStore";
 
 export async function createPrdRoute(
   request: HttpRequest,
@@ -54,7 +58,9 @@ export async function analyzePrdRoute(
       return jsonResponse(404, { ok: false, error: "PRD document was not found." });
     }
 
-    const backlog = parsePrdToBacklog(prd.rawText, prd.id);
+    const retrievedSources = await retrieveContextForPrd(prd.rawText);
+    const parsedBacklog = parsePrdToBacklog(prd.rawText, prd.id);
+    const backlog = groundBacklogWithRetrievedContext(parsedBacklog, retrievedSources);
     const validation = validateBacklogBundle(backlog);
 
     if (!validation.ok) {
@@ -67,14 +73,16 @@ export async function analyzePrdRoute(
 
     const draft = await createGeneratedDraft({
       prdDocumentId: prd.id,
-      backlog
+      backlog,
+      retrievedSources
     });
 
     return jsonResponse(200, {
       ok: true,
       prd,
       draft,
-      validation
+      validation,
+      retrievedSources
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unknown PRD analysis error.";
