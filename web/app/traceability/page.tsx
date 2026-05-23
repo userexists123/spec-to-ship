@@ -73,6 +73,50 @@ function formatDateTime(value: string | null | undefined): string {
   }).format(new Date(value));
 }
 
+function csvEscape(value: string | number | null | undefined): string {
+  const normalized = value === null || value === undefined ? "" : String(value);
+  return `"${normalized.replace(/"/g, '""')}"`;
+}
+
+function buildTraceabilityCsv(snapshot: TraceabilitySnapshotRecord): string {
+  const header = [
+    "Requirement ID",
+    "Requirement title",
+    "Status",
+    "Epics",
+    "Issues",
+    "Azure DevOps IDs",
+    "Acceptance criteria count",
+    "Review assessments count"
+  ];
+
+  const rows = snapshot.chains.map((chain) => [
+    chain.requirementId,
+    chain.requirementTitle,
+    statusLabel(chain.status),
+    chain.epicLocalIds.join("; "),
+    chain.issueLocalIds.join("; "),
+    chain.adoWorkItemIds.join("; "),
+    chain.acceptanceCriteria.length,
+    chain.reviewAssessments.length
+  ]);
+
+  return [header, ...rows].map((row) => row.map(csvEscape).join(",")).join("\n");
+}
+
+function downloadTextFile(filename: string, content: string, mimeType: string): void {
+  const blob = new Blob([content], { type: mimeType });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
+}
+
 async function readError(response: Response, fallback: string): Promise<string> {
   try {
     const body = (await response.json()) as { error?: string };
@@ -86,13 +130,21 @@ async function copyText(value: string): Promise<void> {
   await navigator.clipboard.writeText(value);
 }
 
-function NotesPanel({ title, value }: { title: string; value: string }) {
+function NotesPanel({
+  title,
+  value,
+  onCopy
+}: {
+  title: string;
+  value: string;
+  onCopy: (value: string, label: string) => void;
+}) {
   return (
     <SectionCard title={title}>
       <div className="flex justify-end">
         <button
           type="button"
-          onClick={() => void copyText(value)}
+          onClick={() => onCopy(value, title)}
           className="rounded-lg border border-slate-300 px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
         >
           Copy
@@ -213,7 +265,10 @@ function ChainDetail({ chains }: { chains: TraceabilityChain[] }) {
                   {chain.reviewAssessments.length > 0 ? (
                     <div className="mt-2 space-y-2">
                       {chain.reviewAssessments.map((assessment) => (
-                        <div key={`${assessment.acceptanceCriterionId}-${assessment.localBacklogItemId}`} className="rounded-lg bg-white p-3 text-sm">
+                        <div
+                          key={`${assessment.acceptanceCriterionId}-${assessment.localBacklogItemId}`}
+                          className="rounded-lg bg-white p-3 text-sm"
+                        >
                           <div className="flex flex-wrap items-center gap-2">
                             <Badge tone={assessment.status === "met" ? "green" : assessment.status === "partial" ? "amber" : "red"}>
                               {assessment.status.replace(/_/g, " ")}
@@ -247,6 +302,19 @@ export default function TraceabilityPage() {
   const [error, setError] = useState("");
 
   const exportJson = useMemo(() => (snapshot ? JSON.stringify(snapshot, null, 2) : ""), [snapshot]);
+  const exportCsv = useMemo(() => (snapshot ? buildTraceabilityCsv(snapshot) : ""), [snapshot]);
+
+  async function safeCopy(value: string, label: string) {
+    setError("");
+    setNotice("");
+
+    try {
+      await copyText(value);
+      setNotice(`${label} copied to clipboard.`);
+    } catch {
+      setError("Copy failed. Use the download action instead.");
+    }
+  }
 
   async function loadTraceability(refresh: boolean) {
     if (refresh) {
@@ -290,8 +358,8 @@ export default function TraceabilityPage() {
       <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
         <div className="flex flex-col justify-between gap-6 lg:flex-row lg:items-start">
           <div>
-            <p className="text-sm font-semibold uppercase tracking-wide text-slate-500">Saturday 8</p>
-            <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-950">Traceability and pilot candidate</h1>
+            <p className="text-sm font-semibold uppercase tracking-wide text-slate-500">Optional buffer</p>
+            <h1 className="mt-2 text-3xl font-bold tracking-tight text-slate-950">Traceability export polish</h1>
             <p className="mt-3 max-w-3xl text-sm leading-6 text-slate-600">
               Generate a release-ready traceability snapshot from saved PRD drafts, Azure DevOps mappings, and PR review evidence.
             </p>
@@ -308,10 +376,26 @@ export default function TraceabilityPage() {
             <button
               type="button"
               disabled={!snapshot}
-              onClick={() => void copyText(exportJson)}
+              onClick={() => void safeCopy(exportJson, "Traceability JSON")}
               className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400 hover:bg-slate-50"
             >
               Copy JSON
+            </button>
+            <button
+              type="button"
+              disabled={!snapshot}
+              onClick={() => downloadTextFile("traceability-snapshot.json", exportJson, "application/json")}
+              className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400 hover:bg-slate-50"
+            >
+              Download JSON
+            </button>
+            <button
+              type="button"
+              disabled={!snapshot}
+              onClick={() => downloadTextFile("traceability-table.csv", exportCsv, "text/csv")}
+              className="rounded-xl border border-slate-300 px-4 py-2 text-sm font-semibold text-slate-700 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400 hover:bg-slate-50"
+            >
+              Download CSV
             </button>
           </div>
         </div>
@@ -321,7 +405,9 @@ export default function TraceabilityPage() {
       </section>
 
       {isLoading ? (
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 text-sm text-slate-600 shadow-sm">Loading traceability...</div>
+        <div className="rounded-2xl border border-slate-200 bg-white p-5 text-sm text-slate-600 shadow-sm">
+          Loading traceability...
+        </div>
       ) : null}
 
       {!isLoading && !snapshot ? (
@@ -346,19 +432,23 @@ export default function TraceabilityPage() {
             <dl className="mt-4 grid gap-3 text-sm md:grid-cols-2">
               <div className="rounded-xl bg-slate-50 p-3">
                 <dt className="font-medium text-slate-500">Latest draft</dt>
-                <dd className="mt-1 text-slate-950">{snapshot.latestDraft ? `${snapshot.latestDraft.title} (${snapshot.latestDraft.status})` : "None"}</dd>
+                <dd className="mt-1 text-slate-950">
+                  {snapshot.latestDraft ? `${snapshot.latestDraft.title} (${snapshot.latestDraft.status})` : "None"}
+                </dd>
               </div>
               <div className="rounded-xl bg-slate-50 p-3">
                 <dt className="font-medium text-slate-500">Latest review</dt>
-                <dd className="mt-1 text-slate-950">{snapshot.latestReview ? `PR ${snapshot.latestReview.prId}: ${snapshot.latestReview.prTitle}` : "None"}</dd>
+                <dd className="mt-1 text-slate-950">
+                  {snapshot.latestReview ? `PR ${snapshot.latestReview.prId}: ${snapshot.latestReview.prTitle}` : "None"}
+                </dd>
               </div>
             </dl>
           </section>
 
           <SnapshotSummary snapshot={snapshot} />
           <div className="grid gap-6 lg:grid-cols-2">
-            <NotesPanel title="Customer-facing release notes" value={snapshot.customerReleaseNotes} />
-            <NotesPanel title="Internal-facing release notes" value={snapshot.internalReleaseNotes} />
+            <NotesPanel title="Customer-facing release notes" value={snapshot.customerReleaseNotes} onCopy={safeCopy} />
+            <NotesPanel title="Internal-facing release notes" value={snapshot.internalReleaseNotes} onCopy={safeCopy} />
           </div>
           <TraceabilityTable chains={snapshot.chains} />
           <ChainDetail chains={snapshot.chains} />

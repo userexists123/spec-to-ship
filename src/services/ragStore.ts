@@ -291,19 +291,34 @@ export async function retrieveContextForPrd(prdText: string): Promise<RetrievedC
   const embeddingLiteral = toPgVectorLiteral(embedding);
 
   const result = await getPgPool().query(
-    `select
-       sd.id as source_document_id,
-       sc.id as source_chunk_id,
-       sd.source_type,
-       sd.title,
-       sc.content as excerpt,
-       greatest(0, 1 - (sc.embedding <=> $1::vector)) as similarity,
-       row_number() over (order by sc.embedding <=> $1::vector asc) as rank
-     from source_chunk sc
-     join source_document sd on sd.id = sc.source_document_id
-     where sd.workspace_key = $2
-       and sd.status = 'indexed'
-     order by sc.embedding <=> $1::vector asc
+    `with ranked_chunks as (
+       select
+         sd.id as source_document_id,
+         sc.id as source_chunk_id,
+         sd.source_type,
+         sd.title,
+         sc.content as excerpt,
+         greatest(0, 1 - (sc.embedding <=> $1::vector)) as similarity,
+         row_number() over (partition by sd.id order by sc.embedding <=> $1::vector asc) as source_rank,
+         row_number() over (order by sc.embedding <=> $1::vector asc) as global_rank
+       from source_chunk sc
+       join source_document sd on sd.id = sc.source_document_id
+       where sd.workspace_key = $2
+         and sd.status = 'indexed'
+         and length(sc.content) > 40
+     )
+     select
+       source_document_id,
+       source_chunk_id,
+       source_type,
+       title,
+       excerpt,
+       similarity,
+       row_number() over (order by global_rank asc) as rank
+     from ranked_chunks
+     where source_rank <= 2
+       and similarity >= 0.05
+     order by global_rank asc
      limit $3`,
     [embeddingLiteral, WORKSPACE_KEY, config.ragMatchCount]
   );
@@ -322,7 +337,7 @@ export function groundBacklogWithRetrievedContext(
   const groundingRefs = buildGroundingSourceRefs(retrievedSources);
   const groundingBasis = ` Retrieved context used: ${retrievedSources
     .slice(0, 3)
-    .map((source) => `${source.sourceType}/${source.title}`)
+    .map((source) => `${source.sourceType}/${source.title} (${Math.round(source.similarity * 100)}% match)`)
     .join("; ")}.`;
 
   return {
