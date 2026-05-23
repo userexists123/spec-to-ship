@@ -1,5 +1,6 @@
 import { getAppConfig } from "./config";
 import type {
+  DemoPullRequestWorkItemRef,
   PullRequestChangedFile,
   PullRequestChangesResponse,
   PullRequestContextResponse
@@ -13,6 +14,7 @@ interface AzureDevOpsIdentity {
 interface AzureDevOpsPullRequest {
   pullRequestId?: number;
   title?: string;
+  description?: string;
   status?: string;
   createdBy?: AzureDevOpsIdentity;
   sourceRefName?: string;
@@ -160,19 +162,42 @@ export class PrReviewAdoClient {
       `_apis/git/repositories/${encodeURIComponent(params.repoId)}/pullRequests/${params.prId}/workitems`
     );
 
+    const normalizedWorkItems: DemoPullRequestWorkItemRef[] = [];
+
+    for (const item of workItems.value || []) {
+      const id = toWorkItemId(item.id);
+
+      if (id) {
+        normalizedWorkItems.push({
+          id,
+          url: item.url
+        });
+      }
+    }
+
+    const linkedWorkItemIds = normalizedWorkItems.map((item) => item.id);
+
     return {
       repoId: params.repoId,
       repoName: params.repoName,
       prId: params.prId,
+
       prTitle: pr.title || "",
       prStatus: pr.status || "",
       prAuthor: pr.createdBy?.displayName || pr.createdBy?.uniqueName || "",
       sourceBranch: cleanBranchName(pr.sourceRefName),
       targetBranch: cleanBranchName(pr.targetRefName),
       prUrl: pr._links?.web?.href || pr.url || "",
-      linkedWorkItemIds: (workItems.value || [])
-        .map((item) => toWorkItemId(item.id))
-        .filter((id): id is number => typeof id === "number")
+      linkedWorkItemIds,
+
+      title: pr.title || "",
+      description: pr.description || "",
+      status: pr.status || "",
+      sourceRefName: pr.sourceRefName || "",
+      targetRefName: pr.targetRefName || "",
+      createdBy: pr.createdBy,
+      workItems: normalizedWorkItems,
+      abReferences: []
     };
   }
 
@@ -184,15 +209,20 @@ export class PrReviewAdoClient {
       `_apis/git/repositories/${encodeURIComponent(params.repoId)}/pullRequests/${params.prId}/iterations`
     );
 
-    const latestIterationId = Math.max(
-      ...((iterations.value || []).map((iteration) => iteration.id).filter((id): id is number => typeof id === "number"))
-    );
+    const iterationIds = (iterations.value || [])
+      .map((iteration) => iteration.id)
+      .filter((id): id is number => typeof id === "number");
 
-    if (!Number.isFinite(latestIterationId)) {
+    const latestIterationId = iterationIds.length > 0 ? Math.max(...iterationIds) : null;
+
+    if (!latestIterationId) {
       return {
         repoId: params.repoId,
         prId: params.prId,
-        files: []
+        files: [],
+        fileCount: 0,
+        returnedFileCount: 0,
+        truncated: false
       };
     }
 
@@ -204,7 +234,8 @@ export class PrReviewAdoClient {
       .map((entry) => ({
         path: entry.item?.path || "",
         changeType: entry.changeType || "edit",
-        summary: ""
+        summary: "",
+        isBinary: entry.item?.gitObjectType === "tree"
       }))
       .filter((file) => file.path)
       .map((file) => ({
@@ -215,7 +246,11 @@ export class PrReviewAdoClient {
     return {
       repoId: params.repoId,
       prId: params.prId,
-      files
+      files,
+      fileCount: files.length,
+      returnedFileCount: files.length,
+      truncated: false,
+      iterationId: latestIterationId
     };
   }
 

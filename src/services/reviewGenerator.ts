@@ -10,7 +10,7 @@ import type {
 export interface ReviewWorkItemInput {
   id: number | null;
   title: string;
-  localBacklogItemId: string;
+  localBacklogItemId?: string;
   requirementIds: string[];
   acceptanceCriteria: Array<{
     id: string;
@@ -213,10 +213,7 @@ function buildScopeCreepNotes(
       );
     })
     .slice(0, 5)
-    .map(
-      (file) =>
-        `Changed ${file.path}, but it does not map clearly to the linked acceptance criteria.`
-    );
+    .map((file) => `Changed ${file.path}, but it does not map clearly to the linked acceptance criteria.`);
 }
 
 function buildFindings(
@@ -279,7 +276,7 @@ export function generateReviewDraft(params: {
         storyId: criterion.storyId,
         workItemId: workItem.id,
         workItemTitle: workItem.title,
-        localBacklogItemId: workItem.localBacklogItemId,
+        localBacklogItemId: workItem.localBacklogItemId || "",
         requirementIds: workItem.requirementIds,
         criterion: criterion.text,
         status: classification.status,

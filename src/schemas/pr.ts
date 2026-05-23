@@ -8,9 +8,15 @@ export interface PullRequestSummary {
   url: string;
 }
 
+export interface AbReference {
+  id: number;
+  title: string;
+  url?: string;
+}
+
 export interface DemoPullRequestWorkItemRef {
   id: number;
-  url: string;
+  url?: string;
   title?: string;
 }
 
@@ -31,7 +37,7 @@ export interface PullRequestContextResponse {
   linkedWorkItemIds?: number[];
 
   /**
-   * Backward-compatible fields used by the existing AzureDevOpsClient/demo fixtures.
+   * Backward-compatible fields used by earlier PR context/review/traceability routes.
    */
   title?: string;
   description?: string;
@@ -42,7 +48,8 @@ export interface PullRequestContextResponse {
     displayName?: string;
     uniqueName?: string;
   };
-  workItems?: DemoPullRequestWorkItemRef[];
+  workItems: DemoPullRequestWorkItemRef[];
+  abReferences: AbReference[];
 }
 
 export interface PullRequestChangedFile {
@@ -52,10 +59,17 @@ export interface PullRequestChangedFile {
   isBinary?: boolean;
 }
 
+export interface PullRequestFileChangeSummary extends PullRequestChangedFile {
+  isBinary: boolean;
+}
+
 export interface PullRequestChangesResponse {
   repoId: string;
   prId: number;
-  files: PullRequestChangedFile[];
+  files: PullRequestFileChangeSummary[];
+  fileCount: number;
+  returnedFileCount: number;
+  truncated: boolean;
 
   /**
    * Backward-compatible field used by the existing AzureDevOpsClient demo change fixture.
