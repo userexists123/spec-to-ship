@@ -27,6 +27,12 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
                 <Link href="/prd" className="hover:text-slate-950">
                   PRD
                 </Link>
+                <Link href="/review" className="hover:text-slate-950">
+                  Review
+                </Link>
+                <Link href="/traceability" className="hover:text-slate-950">
+                  Traceability
+                </Link>
               </nav>
             </div>
           </header>
